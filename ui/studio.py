@@ -192,6 +192,37 @@ def tidy(P, F, V, FD):
     P["derived"] = "\n".join(lines)
 
 
+def md_html(md):
+    """Tiny Markdown -> HTML for plan.md (headings, tables, lists, quotes, bold)."""
+    import html as _h
+    out, rows = [], []
+
+    def flush():
+        if rows:
+            out.append("<table>" + "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows) + "</table>")
+            rows.clear()
+    for line in md.splitlines():
+        t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", _h.escape(line))
+        if line.startswith("|"):
+            cells = [c.strip() for c in t.strip("|").split("|")]
+            if not all(set(c) <= set("-: ") for c in cells):
+                rows.append(cells)
+            continue
+        flush()
+        if line.startswith("## "):
+            out.append(f"<h2>{t[3:]}</h2>")
+        elif line.startswith("# "):
+            out.append(f"<h1>{t[2:]}</h1>")
+        elif line.startswith("- "):
+            out.append(f"<div>• {t[2:]}</div>")
+        elif line.startswith("&gt; "):
+            out.append(f"<blockquote>{t[5:]}</blockquote>")
+        elif line.strip():
+            out.append(f"<p>{t}</p>")
+    flush()
+    return "".join(out)
+
+
 class H(SimpleHTTPRequestHandler):
     def __init__(self, *a, **k):
         super().__init__(*a, directory=str(STUDIO), **k)
@@ -215,6 +246,19 @@ class H(SimpleHTTPRequestHandler):
         elif self.path.startswith("/api/state"):
             st = S.load(PACK)
             self.send_json(view(st) if st else {"empty": True, "file": PACK.name})
+        elif self.path.startswith("/plan"):          # the current plan as a readable page
+            st = S.load(PACK)
+            md = report.plan_md(st) if st else "# No plan yet"
+            body = ("<!doctype html><meta charset='utf-8'><title>Event plan</title><style>body{font-family:Inter,system-ui,sans-serif;"
+                    "max-width:860px;margin:40px auto;padding:0 20px;color:#18181B;line-height:1.5}table{border-collapse:collapse;width:100%;"
+                    "margin:8px 0 18px}td,th{border-bottom:1px solid #E4E4E7;padding:6px 8px;text-align:left;font-size:14px}"
+                    "h1{font-size:26px}h2{font-size:18px;margin-top:28px}blockquote{background:#FEF3C7;margin:0;padding:8px 12px;border-radius:8px}</style>"
+                    + md_html(md))
+            b = body.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b)
         elif self.path.startswith("/api/presets"):
             fs = sorted((ROOT / "tests" / "messages").glob("*.txt"))
             self.send_json([dict(label=f.stem.split("_", 1)[-1].replace("_", " "), text=f.read_text(encoding="utf-8").strip())
