@@ -25,7 +25,12 @@ files = sorted((ROOT / "state").glob("*.json"), key=lambda f: f.stat().st_mtime,
 if not files:
     st.info("No runs yet. Run:  python run.py <messages.txt>")
     st.stop()
-states = [json.loads(f.read_text(encoding="utf-8")) for f in files]
+pairs = [(f, json.loads(f.read_text(encoding="utf-8"))) for f in files]
+pairs = [(f, d) for f, d in pairs if isinstance(d, dict) and "path" in d]     # skip non-planner files (chat history)
+files, states = [f for f, _ in pairs], [d for _, d in pairs]
+if not states:
+    st.info("No runs yet. Run:  python run.py <messages.txt>")
+    st.stop()
 idx = st.sidebar.selectbox("Message file", range(len(states)), format_func=lambda i: Path(states[i]["path"]).name)
 S = states[idx]
 

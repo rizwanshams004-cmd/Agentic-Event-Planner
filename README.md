@@ -9,7 +9,8 @@ pip install -r requirements.txt
 set GROQ_API_KEY=...        # or GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY, or a .env file
 python run.py pack.txt      # full run (1 reading call)
 # paste the next message at the end of pack.txt, then the SAME command -> update run
-python ui/studio.py pack.txt   # approved UI: Planner Studio -> http://localhost:8600
+streamlit run ui/chat.py       # MAIN UI: one chat + 'Your Event Plan' (7 steps), optional slides
+python ui/studio.py pack.txt   # developer view: Planner Studio -> http://localhost:8600
 streamlit run ui/app.py        # backup UI: Plan · Messages · Trace · Changes · Tokens
 python -m pytest -q tests   # offline regression: sample pack + 20 change / wrong-message cases
 ```

@@ -115,7 +115,7 @@ def repair(f, role):
     if k == "extra_people" and BREAK.search(str(v.get("who", ""))):
         f["k"], f["v"] = "block", {"name": str(v.get("who")), "min": v.get("n"), "required": True}
         return "extra_people that names a break/session -> block"
-    if k == "duration_min" and role == "judging":
+    if k == "duration_min" and (role == "judging" or re.search(r"per (team|presentation|pitch)|each team|judg", f.get("q", ""), re.I)):
         f["k"] = "min_per_team"
         return "duration from the judging coordinator -> min_per_team"
     if k == "food" and tonum(v.get("price_per_head")) == 0:
