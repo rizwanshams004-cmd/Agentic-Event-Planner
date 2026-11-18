@@ -29,7 +29,8 @@ MULT = {"k": 1e3, "thousand": 1e3, "hazaar": 1e3, "hazar": 1e3, "hajar": 1e3, "l
 
 
 # Sender-name keywords -> role (first match wins). Generic role words, not pack data.
-ROLE_RULES = [("organizer", r"planner ui|\(you\)"), ("student", r"student|society|club|\bclass\b|batch"),
+ROLE_RULES = [("organizer", r"planner ui|\(you\)"),
+              ("official", r"disabilit|accessib|welfare|safety|security office|health|medical|administration"), ("student", r"student|society|club|\bclass\b|batch"),
               ("judging", r"judg\w*\s+(coord|panel|lead|head)|coordinator"),
               ("judge", r"\bjudge\b"), ("finance", r"financ|account|treasur|bursar"),
               ("caterer", r"cater|food|kitchen|restaurant"), ("venue", r"venue|\bhall\b|auditorium|facilit|estate"),
@@ -89,8 +90,9 @@ def clean(f):
     elif k in DICT_KEYS:
         if not isinstance(v, dict):
             n = tonum(v)
-            if k == "skip" and isinstance(v, str):
-                v = {"area": v}
+            SKEY = {"skip": "area", "venue_require": "feature", "venue_exclude": "name", "food_require": "name", "diet": "type"}
+            if k in SKEY and isinstance(v, str):
+                v = {SKEY[k]: v}
             elif n is None or k not in ("reserve", "seat_factor", "judges_change"):
                 return None, f"{k}: expected an object, got {v!r}"
             else:
@@ -124,6 +126,12 @@ def repair(f, role):
     if k == "block" and re.search(r"per (team|presentation|pitch)|each team", str(v.get("name", "")) + " " + f.get("q", ""), re.I)             and tonum(v.get("min")) and role in ("judging", "authority", "organizer"):
         f["k"], f["v"] = "min_per_team", tonum(v.get("min"))
         return "judging time per team written as a schedule block -> min_per_team"
+    if k == "food" and v.get("fee") and v.get("price_per_head") is None and (
+            re.search(r"\d\s*%|percent|fees?d?\b.*%", f.get("q", ""), re.I) or re.search(r"charge|tax|service|gst", str(v.get("name", "")), re.I)
+            and tonum(v.get("fee")) <= 100 and re.search(r"%", f.get("q", ""))):
+        f["k"], f["v"] = "cost", {"name": str(v.get("name") or "service charge"), "amount": tonum(v["fee"]),
+                                  "basis": "pct_of:food", "status": "required"}
+        return "percentage charge written as a food fee -> cost pct_of:food"
     if k == "food" and tonum(v.get("price_per_head")) == 0:
         f["v"] = {x: y for x, y in v.items() if x not in ("price_per_head", "min_order")}
         return "food item priced 0 per head -> fee-only line"
@@ -192,6 +200,9 @@ def read(chunk, known, budget, tr):
                          if role != m.get("role") and role != "organizer" else None,
                          frm=frm, role=role,
                          date=date, facts=good, dropped=bad, other=m.get("other") or [], note=str(m.get("note") or "")))
+    venue_features(chunk, msgs, tr)
+    if not any(m["facts"] for m in msgs) and len(re.findall(r"\d", chunk)) >= 6:
+        raise LLMError("reader returned no facts for a message full of numbers (bad model output); text not consumed")
     if len(msgs) == 1 and budget.left() > 0:
         reread(chunk, msgs[0], prompt.rsplit("<<<MESSAGES", 1)[0], budget, tr)
     tr.code(f"reader: {len(msgs)} message(s), {sum(len(m['facts']) for m in msgs)} fact(s), "
@@ -205,6 +216,30 @@ AREA_WORDS = [("venue", r"venue|hall|room|seat|power|generator|parking|access"),
 
 def infer_area(text):
     return next((a for a, rx in AREA_WORDS if re.search(rx, str(text), re.I)), "schedule")
+
+
+def venue_features(chunk, msgs, tr):
+    """Code reading: a sentence naming venues ("Halls 2 and 3 ... ramp access") gives exactly those venues that feature."""
+    for m in msgs:
+        names = [f["v"]["name"] for f in m["facts"] if f["k"] == "venue" and isinstance(f["v"], dict) and f["v"].get("name")]
+        if len(names) < 2:
+            continue
+        for sent in re.split(r"(?<=[.!?])\s+|\n", chunk):
+            ft = next((b for a, b in FEAT.items() if a in sent.lower()), None)
+            if not ft or not re.search(r"\b(only|have|has|with|are|is)\b", sent, re.I):
+                continue
+            hit = []
+            for n in names:
+                parts = n.split()
+                pre, tok = (" ".join(parts[:-1]), parts[-1]) if len(parts) > 1 else (n, "")
+                if re.search(rf"\b{re.escape(n)}\b", sent, re.I) or (tok and re.search(
+                        rf"\b{re.escape(pre)}s?\b[^.]*?\b{re.escape(tok)}\b", sent, re.I)):
+                    hit.append(n)
+            if 0 < len(hit) < len(names):
+                for n in hit:
+                    f = next(f for f in m["facts"] if f["k"] == "venue" and f["v"].get("name") == n)
+                    f["v"]["features"] = sorted(set(f["v"].get("features") or []) | {ft})
+                tr.code(f"venue features (code, 0 tokens): '{sent.strip()[:70]}' -> {ft} for {', '.join(hit)}")
 
 
 def fact_numbers(facts):

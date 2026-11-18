@@ -42,6 +42,10 @@ def desc(f):
     return f"msg {f['msg']} {f['k']}={fmt(f['v'])}"
 
 
+def venue_names(st):
+    return {str(f["v"].get("name", "")).lower() for f in st["facts"] if f["k"] == "venue" and isinstance(f["v"], dict)}
+
+
 def current(st, s):
     c = [f for f in st["facts"] if f["slot"] == s and f["status"] in ("applied", "request")]
     return max(c, key=lambda f: f["eff"]) if c else None
@@ -72,6 +76,13 @@ def resolve(st, f, tr):
             else {"finance", "authority", "venue", "caterer", "vendor"}
     else:
         owners = OWN.get(k)
+    if k == "window" and not re.search(r"venue|hall|event|hackathon|judg|room|centre|center|marquee|auditorium|"
+                                       r"competition|programme|program", str(v.get("what", "")), re.I) \
+            and not any(n and n in str(v.get("what", "")).lower() for n in venue_names(st)):
+        return _set(f, "no_impact", f"about {v.get('what')}, not this event or its venue; no effect on the plan", tr)
+    if k == "extra_people" and re.search(r"registered|participant|student|wheelchair|already", f.get("q", "") + " "
+                                         + str(v.get("who", "")), re.I):
+        return _set(f, "no_impact", "these people are already counted among the participants", tr)
     if k == "judges_change" and role == "judge" and v.get("delta", 0) not in (-1, -1.0):
         return _set(f, "rejected", f"a judge may only report their own withdrawal (-1), not {v.get('delta')}", tr)
     if owners is not None and not eff & owners:                              # rule 3 / 4

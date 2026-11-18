@@ -16,7 +16,7 @@ DEPS = {**{k: ALL for k in ("students", "team_size", "judges_available", "judges
         **{k: ["schedule"] for k in ("block", "window", "late", "duration_min", "start_time", "end_time")},
         **{k: ["budget"] for k in ("cost", "budget", "reserve")}}
 FEAT = {"backup power": "generator", "power backup": "generator", "ups": "generator", "generator": "generator",
-        "genset": "generator", "wheelchair": "accessible", "ramp": "accessible", "accessib": "accessible",
+        "genset": "generator", "ramp": "accessible", "lift": "accessible", "elevator": "accessible", "step-free": "accessible", "step free": "accessible", "wheelchair": "accessible", "ramp": "accessible", "accessib": "accessible",
         "air condition": "ac", "air-condition": "ac", "a/c": "ac", "projector": "projector", "wifi": "wifi"}
 
 

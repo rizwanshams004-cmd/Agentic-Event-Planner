@@ -30,7 +30,7 @@ def _env():
 
 def providers():
     _env()
-    dflt = "groq,groq_alt,gemini,openai,anthropic" + (",ollama" if os.environ.get("OLLAMA_URL") else "")
+    dflt = "groq,gemini,openai,anthropic"            # groq_alt (allam-2-7b) only if listed in PLANNER_PROVIDERS + (",ollama" if os.environ.get("OLLAMA_URL") else "")
     order = [p.strip() for p in os.environ.get("PLANNER_PROVIDERS", dflt).split(",")]
     return [p for p in order if p in P and (not P[p][1] or os.environ.get(P[p][1]))]
 
@@ -100,7 +100,7 @@ class Budget:
                         self.tr.call(self.st["calls"], model, area, prompt, text, usage, secs=time.time() - t)
                         return text
                     wait = float(e.response.headers.get("retry-after", 99)) if e.response is not None else 99
-                    if e.response is None or code != 429 or wait > 20:
+                    if e.response is None or code != 429 or wait > 45:
                         raise
                     self.tr.code(f"provider {p} rate-limited (429); waiting {wait:g} s then retrying (same numbered call)")
                     time.sleep(wait)
