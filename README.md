@@ -15,6 +15,15 @@ python -m pytest -q tests   # offline regression: sample pack + 20 change / wron
 Provider order: `PLANNER_PROVIDERS=groq,gemini,openai,anthropic,ollama` (default; only those with keys are used,
 Ollama last). Override a model with `GROQ_MODEL=...` etc. Timeout 40 s per call, then fallback; hard cap 5 calls per run.
 
+## Model and verified results (real Groq API, 18 Nov 2026)
+Model: `openai/gpt-oss-20b` on Groq (smallest capable chat model on this account; `llama-3.1-8b-instant` is not
+offered to it), fallback `allam-2-7b`. Free tier = 8,000 tokens/min, so the client waits out a short 429 and retries.
+- Full sample pack: 1 call, ~2,500 tokens, ~3.5 s, 6/6 checks: 177 people, 17/20 judges, Hall A, Rs 597,400.
+- Each update: 1 `reading` call, ~1,300 tokens, ~1.5-3 s. 13 PRD test messages (8 real changes, 5 wrong) all
+  give the expected status and figures; Roman Urdu price/fee updates read correctly.
+- Sender roles: a keyword rule on the sender name overrides the model's role label (logged in the trace),
+  so "Student society: budget is now 9 lakh" is always rejected.
+
 ## Outputs
 `out/plan.md`, `out/trace.txt` (full input/output, tokens as reported by the API, totals), `out/trace.jsonl`.
 
