@@ -6,7 +6,8 @@ import requests
 
 ROOT = Path(__file__).resolve().parent.parent
 # provider -> (url, api-key env var, default small model). Override model with <PROVIDER>_MODEL.
-P = {"groq": ("https://api.groq.com/openai/v1/chat/completions", "GROQ_API_KEY", "llama-3.1-8b-instant"),
+P = {"groq": ("https://api.groq.com/openai/v1/chat/completions", "GROQ_API_KEY", "openai/gpt-oss-20b"),
+     "groq_alt": ("https://api.groq.com/openai/v1/chat/completions", "GROQ_API_KEY", "allam-2-7b"),
      "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "GEMINI_API_KEY",
                 "gemini-2.0-flash-lite"),
      "openai": ("https://api.openai.com/v1/chat/completions", "OPENAI_API_KEY", "gpt-4o-mini"),
@@ -29,8 +30,9 @@ def _env():
 
 def providers():
     _env()
-    order = os.environ.get("PLANNER_PROVIDERS", "groq,gemini,openai,anthropic,ollama").split(",")
-    return [p.strip() for p in order if p.strip() in P and (not P[p.strip()][1] or os.environ.get(P[p.strip()][1]))]
+    dflt = "groq,groq_alt,gemini,openai,anthropic" + (",ollama" if os.environ.get("OLLAMA_URL") else "")
+    order = [p.strip() for p in os.environ.get("PLANNER_PROVIDERS", dflt).split(",")]
+    return [p for p in order if p in P and (not P[p][1] or os.environ.get(P[p][1]))]
 
 
 def model_of(p):
@@ -52,9 +54,11 @@ def _call(p, prompt, timeout):
     if p == "ollama":
         url = os.environ.get("OLLAMA_URL", "http://localhost:11434") + url
     h = {"Authorization": "Bearer " + os.environ[key]} if key else {}
-    r = requests.post(url, headers=h, timeout=timeout, json={
-        "model": model, "temperature": 0, "response_format": {"type": "json_object"},
-        "messages": [{"role": "user", "content": prompt}]})
+    body = {"model": model, "temperature": 0, "response_format": {"type": "json_object"},
+            "messages": [{"role": "user", "content": prompt}]}
+    if "gpt-oss" in model:
+        body["reasoning_effort"] = "low"   # fewer hidden reasoning tokens
+    r = requests.post(url, headers=h, timeout=timeout, json=body)
     r.raise_for_status()
     j = r.json()
     u = j.get("usage")

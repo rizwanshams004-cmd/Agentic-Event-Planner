@@ -3,6 +3,7 @@ import json
 import re
 from pathlib import Path
 from .llm import LLMError
+from .plan import FEAT
 
 ROOT = Path(__file__).resolve().parent.parent
 PROMPT = (ROOT / "prompts/reader.txt").read_text(encoding="utf-8")
@@ -83,6 +84,27 @@ def clean(f):
     return dict(k=k, v=v, q=str(f.get("q", ""))[:80], req=bool(f.get("req"))), None
 
 
+BREAK = re.compile(r"break|prayer|namaz|lunch|tea|session|opening|closing|ceremony|min", re.I)
+
+
+def repair(f, role):
+    """Generic key repairs for common small-model slips (no pack data). Returns a note or None."""
+    k, v = f["k"], f["v"]
+    if k == "extra_people" and BREAK.search(str(v.get("who", ""))):
+        f["k"], f["v"] = "block", {"name": str(v.get("who")), "min": v.get("n"), "required": True}
+        return "extra_people that names a break/session -> block"
+    if k == "duration_min" and role == "judging":
+        f["k"] = "min_per_team"
+        return "duration from the judging coordinator -> min_per_team"
+    if k == "food" and tonum(v.get("price_per_head")) == 0:
+        f["v"] = {x: y for x, y in v.items() if x not in ("price_per_head", "min_order")}
+        return "food item priced 0 per head -> fee-only line"
+    if k == "late" and role == "judge" and "judg" not in str(v.get("who", "")).lower():
+        f["v"] = {**v, "who": "judge"}
+        return "late sender is a judge -> who=judge"
+    return None
+
+
 def ungrounded(f, nums):
     v = f["v"]
     vals = [v] if not isinstance(v, dict) else [v[x] for x in NUMF if tonum(v.get(x)) is not None]
@@ -137,12 +159,30 @@ def read(chunk, known, budget, tr):
     return msgs
 
 
+AREA_WORDS = [("venue", r"venue|hall|room|seat|power|generator|parking|access"), ("food", r"food|lunch|meal|tea|cater|diet|veg"),
+              ("judging", r"judg|score|jury"), ("budget", r"rs|rupee|cost|price|tax|gst|budget|fee|pay")]
+
+
+def infer_area(text):
+    return next((a for a, rx in AREA_WORDS if re.search(rx, str(text), re.I)), "schedule")
+
+
 def escape(other, M, budget, tr):
     """Area call for constraints outside the vocabulary (max 2 per message, inside the call budget)."""
     out = []
     for it in other[:2]:
         text = it.get("t") if isinstance(it, dict) else str(it)
-        area = it.get("a") if isinstance(it, dict) and it.get("a") in AREAS else "schedule"
+        m = re.search(r"(\d+)\s*(?:-\s*)?min", str(text), re.I)
+        if m and BREAK.search(str(text)):        # obvious timed break: map in code, no model call
+            out.append(dict(k="block", v={"name": str(text), "min": int(m[1]), "required": True}, q=str(text)[:80], req=False))
+            tr.code(f"escape hatch (code, 0 tokens) '{text}' -> block {m[1]} min")
+            continue
+        area = it.get("a") if isinstance(it, dict) and it.get("a") in AREAS else infer_area(text)
+        ft = next((b for a, b in FEAT.items() if a in str(text).lower()), None)
+        if ft:                                   # known venue feature: map in code, no model call
+            out.append(dict(k="venue_require", v={"feature": ft}, q=str(text)[:80], req=False))
+            tr.code(f"escape hatch (code, 0 tokens) '{text}' -> venue_require {ft}")
+            continue
         if budget.left() <= 0:
             tr.code(f"escape hatch skipped (call budget used up): {text}")
             break

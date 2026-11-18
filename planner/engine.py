@@ -146,6 +146,10 @@ def apply(st, msgs, chunk, tr, C, budget=None, mode="full"):
                 tr.code(f"msg {n} has constraints outside the vocabulary: {m['other']}")
         recs = []
         for f in facts:
+            f = dict(f)
+            note = reader.repair(f, M["role"])
+            if note:
+                tr.code(f"repair  msg {n} {note}")
             st["order"] += 1
             r = dict(id=len(st["facts"]) + len(recs) + 1, msg=n, k=f["k"], v=f["v"], q=f.get("q", ""),
                      req=bool(f.get("req")), role=M["role"], date=date, run=tr.run, status="", reason="",
