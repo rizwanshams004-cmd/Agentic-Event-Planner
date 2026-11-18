@@ -27,8 +27,11 @@ def run(p, st):
         f"{B['total']:,} + reserve {B['reserve']:,} <= {int(g('budget', 0)):,}")
 
     feats = V.get("features", [])
-    add("Venue fits", V.get("name") and V.get("eff_seats", 0) >= hc and all(r in feats for r in V["required"]),
-        f"{V.get('name')}: {V.get('eff_seats')} seats >= {hc}; features ok" if V.get("name") else "no venue")
+    if not V.get("name") and "venue" in F.get("skipped", []):
+        add("Venue fits", True, "venue arranged separately (skipped)")
+    else:
+        add("Venue fits", V.get("name") and V.get("eff_seats", 0) >= hc and all(r in feats for r in V["required"]),
+            f"{V.get('name')}: {V.get('eff_seats')} seats >= {hc}; features ok" if V.get("name") else "no venue")
 
     bl = SC["blocks"]
     contiguous = all(bl[i]["e"] == bl[i + 1]["s"] for i in range(len(bl) - 1))
@@ -53,7 +56,8 @@ def run(p, st):
             (not mx or F["judges_used"] * int(mx) >= teams * jpt),
             f"{F['judges_used']} used <= {av} available; {F['judges_used']} × {mx} >= {teams * jpt} team slots")
 
-    areas = dict(venue=V.get("name"), schedule=bl, food=FD.get("name"), budget=B["lines"])
+    sk = F.get("skipped", [])
+    areas = dict(venue=V.get("name") or ("venue" in sk), schedule=bl, food=FD.get("name") or ("food" in sk), budget=B["lines"])
     if F.get("judging", True):
         areas["judging"] = J["grid"]
     add("All areas covered", all(areas.values()), ", ".join(k for k, v in areas.items() if v) or "none")

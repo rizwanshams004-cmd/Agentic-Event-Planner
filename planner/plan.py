@@ -196,8 +196,14 @@ def build(st, cfg):
     mx, avail = g("max_teams_per_judge"), g("judges_available")
     if avail is not None:
         avail = int(avail) + int(sum(num(d.get("delta")) for d in of("judges_change")))
+    skipped = set()
+    for d in of("skip"):
+        a = str(d.get("area", "")).lower()
+        skipped.add("food" if any(w in a for w in ("food", "cater", "lunch", "meal", "khana")) else
+                    "judging" if "judg" in a else "venue" if any(w in a for w in ("venue", "hall", "marquee")) else a)
     # Judging only for competitions: teams, or any judging fact. A wedding or seminar has none.
-    judging = bool(ts) or any(k in S for k in ("judges_available", "max_teams_per_judge", "min_per_team"))
+    judging = (bool(ts) or any(k in S for k in ("judges_available", "max_teams_per_judge", "min_per_team"))) \
+        and "judging" not in skipped
     need = used = rounds = jmin = 0
     mpt = g("min_per_team")
     if judging:
@@ -223,7 +229,7 @@ def build(st, cfg):
     staff = int(g("staff", 0))
     extra = sum(int(num(d.get("n"))) for d in of("extra_people"))
     hc = students + used + staff + extra
-    fig = dict(event=g("event_type") or "event", judging=judging, students=students, team_size=ts, teams=teams, judges_available=avail, judges_needed=need,
+    fig = dict(event=g("event_type") or "event", judging=judging, skipped=sorted(skipped), students=students, team_size=ts, teams=teams, judges_available=avail, judges_needed=need,
                judges_used=used, standby=max(0, (avail or 0) - used), judges_per_team=jpt,
                max_teams_per_judge=mx, min_per_team=mpt, rounds=rounds, judging_min=jmin, staff=staff,
                extra=extra, headcount=hc, duration_min=dur, budget=budget)
@@ -257,7 +263,10 @@ def build(st, cfg):
                  basis=f"{num(price):,.0f}/h × {dur / 60:g} h" if per_hour else "fixed")
         (rejected.append({**v, "why": why}) if why else valid.append(v))
     valid.sort(key=lambda v: (v["cost"], -v["seats"]))
-    if not of("venue"):
+    if not of("venue") and "venue" in skipped:
+        notes.append("venue skipped: arranged separately by the organiser")
+        valid = [None]
+    elif not of("venue"):
         probs.append(f"provide: venue options with seats and price, at least {hc} seats"
                      + (f" with {', '.join(req)}" if req else "") + " (e.g. 'Marquee X seats 300 for Rs 2 lakh')")
         valid = [None]
@@ -278,7 +287,10 @@ def build(st, cfg):
     freq = {norm(d.get("name", "")) for d in of("food_require")}
     fopts = [f for f in fo_all if norm(f["name"]) in freq] or fo_all
     if not fopts:
-        probs.append("provide: catering price per person (e.g. 'menu Rs 2,500 per head')")
+        if "food" in skipped:
+            notes.append("catering skipped by the organiser")
+        else:
+            probs.append("provide: catering price per person (e.g. 'menu Rs 2,500 per head')")
         fopts = [None]
     diet = [dict(type=d.get("type"), n=d.get("n"), pct=d.get("pct"), src=srcs(d)) for d in of("diet")]
 

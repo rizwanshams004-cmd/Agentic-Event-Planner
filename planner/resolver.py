@@ -11,8 +11,8 @@ OWN = {**{k: {"authority"} for k in EVENT}, **{k: {"judging", "authority"} for k
        "venue_require": {"authority", "venue", "official", "finance"},
        "venue_exclude": {"authority", "venue", "official"},
        "food": {"caterer"}, "food_require": {"authority"}, "diet": {"authority", "caterer"},
-       "judges_change": {"judging", "authority", "judge"}, "late": None}
-NAMED = {"venue": "name", "food": "name", "cost": "name", "block": "name", "diet": "type",
+       "judges_change": {"judging", "authority", "judge"}, "late": None, "skip": {"authority"}}
+NAMED = {"skip": "area", "venue": "name", "food": "name", "cost": "name", "block": "name", "diet": "type",
          "venue_require": "feature", "venue_exclude": "name", "extra_people": "who",
          "late": "who", "window": "what", "food_require": "name"}
 FILLER = r"\b(box|boxes|lunch|meal|meals|wala|wali|package|option|the|bill|charges?|cost)\b"

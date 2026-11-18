@@ -14,7 +14,7 @@ AREAS = ("venue", "schedule", "food", "judging", "budget")
 INT_KEYS = {"students", "team_size", "teams", "duration_min", "staff", "judges_available", "honorarium",
             "min_per_team", "max_teams_per_judge", "judges_per_team", "budget"}
 STR_KEYS = {"start_time", "end_time", "event_type"}
-DICT_KEYS = {"extra_people", "reserve", "seat_factor", "venue", "venue_require", "venue_exclude", "block",
+DICT_KEYS = {"skip", "extra_people", "reserve", "seat_factor", "venue", "venue_require", "venue_exclude", "block",
              "window", "late", "food", "food_require", "diet", "judges_change", "cost", "claim"}
 NUMF = ("seats", "price", "amount", "n", "min", "delta", "pct", "price_per_head", "fee", "min_order", "value")
 WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
@@ -89,9 +89,12 @@ def clean(f):
     elif k in DICT_KEYS:
         if not isinstance(v, dict):
             n = tonum(v)
-            if n is None or k not in ("reserve", "seat_factor", "judges_change"):
+            if k == "skip" and isinstance(v, str):
+                v = {"area": v}
+            elif n is None or k not in ("reserve", "seat_factor", "judges_change"):
                 return None, f"{k}: expected an object, got {v!r}"
-            v = {"reserve": {"amount": n}, "seat_factor": {"pct": n}, "judges_change": {"delta": n}}[k]
+            else:
+                v = {"reserve": {"amount": n}, "seat_factor": {"pct": n}, "judges_change": {"delta": n}}[k]
         v = dict(v)
         for fld in NUMF:
             if fld in v and v[fld] is not None:
@@ -208,7 +211,17 @@ def escape(other, M, budget, tr):
             out.append(dict(k="block", v={"name": str(text), "min": int(m[1]), "required": True}, q=str(text)[:80], req=False))
             tr.code(f"escape hatch (code, 0 tokens) '{text}' -> block {m[1]} min")
             continue
+        if isinstance(it, dict) and str(it.get("a", "")).lower() == "skip":    # model tagged it as a skip
+            out.append(dict(k="skip", v={"area": str(text).lower()}, q=str(text)[:80], req=False))
+            tr.code(f"escape hatch (code, 0 tokens) skip '{text}'")
+            continue
         area = it.get("a") if isinstance(it, dict) and it.get("a") in AREAS else infer_area(text)
+        sk = re.search(r"\b(skip|not needed|no need|ourselves|khud|zaroorat nahi|nahi chahiye)\b", str(text), re.I)
+        ar = re.search(r"venue|hall|marquee|cater|food|meal|lunch|khana|judg", str(text), re.I)
+        if sk and ar:                            # "skip the venue / no catering needed": map in code, no model call
+            out.append(dict(k="skip", v={"area": ar[0].lower()}, q=str(text)[:80], req=False))
+            tr.code(f"escape hatch (code, 0 tokens) '{text}' -> skip {ar[0].lower()}")
+            continue
         ft = next((b for a, b in FEAT.items() if a in str(text).lower()), None)
         if ft:                                   # known venue feature: map in code, no model call
             out.append(dict(k="venue_require", v={"feature": ft}, q=str(text)[:80], req=False))

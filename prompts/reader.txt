@@ -9,6 +9,7 @@ venue {name,seats,price,basis:"fixed"|"per_hour",features:[],available:true|fals
 venue_require {feature} ("venue must have X") | venue_exclude {name}
 block {name,min,at:"HH:MM" if fixed,required:true} (breaks/sessions, e.g. tea break 10 min) | window {what,from:"HH:MM",until:"HH:MM"} | late {who,min}
 food {name,price_per_head,fee,min_order} (tiers are separate food facts) | food_require {name} | diet {type,n or pct}
+skip {area:"venue"|"food"|"judging"} (organiser says skip it / not needed / we arrange it ourselves / khud arrange)
 judges_change {delta} (negative when judges withdraw or drop out)
 cost {name,amount,basis:"fixed"|"per_head"|"per_team"|"per_judge"|"pct_of:venue"|"pct_of:food"|"pct_of:all",status:"committed"|"required"|"optional"}
 claim {key,value}: anyone stating a count or total we compute (boxes, headcount, people to feed, judges needed, rounds, total cost), or a vendor saying how many units they will supply.

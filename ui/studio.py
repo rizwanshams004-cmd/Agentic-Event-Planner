@@ -29,13 +29,31 @@ def as_message(text):
     """Text typed in the UI comes from the organiser unless it is a pasted message with its own sender line."""
     m = SENDER.match(text)
     label = m.group(2).lower() if m else ""
-    if m and len(label.split()) <= 4 and not re.search(r"quote|update|note|info|detail|plan|budget|price|option|request|"
-                                                       r"change|menu|schedule|here|wedding|event", label):
+    sender_words = r"caterer|manager|dean|financ|office|coordinator|judge|society|student|notice|principal|registrar|"                    r"director|admin|organi[sz]er|volunteer|vendor|iesco|wapda|police|hall\b|whatsapp|email"
+    if m and len(label.split()) <= 4 and re.search(sender_words, label) and not re.search(
+            r"quote|update|option|detail|price|skip", label):
         return text.strip()
     return f"Organizer (planner UI), {datetime.now():%d %b %Y}: {text.strip()}"
 
 
-LABEL = {"students": "Guests / participants", "team_size": "Team size", "teams": "Teams", "duration_min": "Event length (min)",
+EVENT_WORDS = re.compile(r"\b(wedding|shadi|shaadi|nikah|walima|valima|mehndi|mehendi|baraat|barat|engagement|mangni|"
+                         r"birthday|conference|seminar|workshop|hackathon|concert|festival|meetup|gala|expo|exhibition|"
+                         r"convocation|tournament)\b", re.I)
+NEW_WORDS = re.compile(r"\b(new (event|plan)|naya (event|plan)|start over|another event)\b", re.I)
+SIZE_WORDS = re.compile(r"\b(people|guests|persons|log|participants|students|attendees|budget|lakh|lac|crore)\b", re.I)
+
+
+def is_new_event(text, old):
+    """Typed text that describes a different event than the one in the current file starts a fresh plan."""
+    if not as_message(text).startswith("Organizer") or not old.strip():
+        return False
+    if NEW_WORDS.search(text):
+        return True
+    m = EVENT_WORDS.search(text)
+    return bool(m and SIZE_WORDS.search(text) and m.group(1).lower() not in old.lower())
+
+
+LABEL = {"skip": "Skipped", "students": "Guests / participants", "team_size": "Team size", "teams": "Teams", "duration_min": "Event length (min)",
          "staff": "Staff", "budget": "Budget (Rs)", "judges_available": "Judges available", "honorarium": "Judge fee (Rs)",
          "min_per_team": "Minutes per team", "max_teams_per_judge": "Max teams per judge", "event_type": "Event type",
          "start_time": "Start time", "end_time": "End time"}
@@ -63,6 +81,8 @@ def human(f):
         return f"{v.get('who')} late by {N(v.get('min'))} min"
     if k == "judges_change":
         return f"Judges change: {N(v.get('delta'))}"
+    if k == "skip":
+        return f"Skipped: {v.get('area')}"
     if k == "venue_require":
         return f"Venue must have: {v.get('feature')}"
     return f"{LABEL.get(k, k)}: " + ", ".join(f"{a} {N(b) if isinstance(b, (int, float)) else b}" for a, b in v.items())
@@ -151,7 +171,25 @@ def view(st):
                         ("\nStart time is a planner assumption." if SC["assumed"] else ""),
             gridTxt="\n".join(f"J{i + 1:<3} {', '.join(t)}" for i, t in enumerate(p["judging"]["grid"])),
             decisions="\n".join(p["levers"] + p["notes"]) or "none"))
+        tidy(out["plan"], F, V, FD)
     return out
+
+
+def tidy(P, F, V, FD):
+    """Plain wording when an event has no venue/food yet, skipped parts, or no judging."""
+    sk = F.get("skipped", [])
+    if not V.get("name"):
+        P["venue"] = "Arranged separately" if "venue" in sk else "Details needed"
+    if not FD.get("name"):
+        P["food"] = "Skipped" if "food" in sk else "Details needed"
+    lines = P["derived"].split("\n")
+    if not F.get("judging", True):
+        P["judging"] = "Not needed"
+        P["judges"] = "Not needed"
+        lines = [f"event = {F.get('event')} · no teams or judging"] + [l for l in lines if not l.startswith(("teams", "judges", "rounds"))]
+    lines = [("venue = " + P["venue"].lower()) if l.startswith("venue") and not V.get("name") else
+             ("food = " + P["food"].lower()) if l.startswith("food") and not FD.get("name") else l for l in lines]
+    P["derived"] = "\n".join(lines)
 
 
 class H(SimpleHTTPRequestHandler):
@@ -185,6 +223,7 @@ class H(SimpleHTTPRequestHandler):
             super().do_GET()
 
     def do_POST(self):
+        global PACK
         if not self.path.startswith("/api/add"):
             return self.send_json({"error": "not found"}, 404)
         text = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}").get("text", "").strip()
@@ -193,10 +232,17 @@ class H(SimpleHTTPRequestHandler):
             st = S.load(PACK)
             return self.send_json(view(st) if st else {"empty": True, "file": PACK.name})
         old = PACK.read_text(encoding="utf-8") if PACK.exists() else ""
+        new_event = is_new_event(text, old)
+        if new_event:                              # fresh plan in its own file; the old file is kept as it was
+            word = (EVENT_WORDS.search(text) or re.search(r"\w+", "event"))[0].lower()
+            (ROOT / "events").mkdir(exist_ok=True)
+            PACK = ROOT / "events" / f"{word}-{datetime.now():%Y%m%d-%H%M%S}.txt"
+            old = ""
         with open(PACK, "a", encoding="utf-8") as fh:
             fh.write(("" if not old or old.endswith("\n\n") else "\n" if old.endswith("\n") else "\n\n") + as_message(text) + "\n")
         engine.run(str(PACK), echo=False)        # the same code path as `python run.py <file>`
-        self.send_json(view(S.load(PACK)))
+        st = S.load(PACK)
+        self.send_json(dict(view(st), newEvent=new_event) if st else {"empty": True, "file": PACK.name})
 
 
 if __name__ == "__main__":

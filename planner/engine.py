@@ -210,11 +210,12 @@ def apply(st, msgs, chunk, tr, C, budget=None, mode="full"):
         for lv in p["levers"]:
             tr.code(f"lever  {lv}")
         if p["feasible"]:
-            st["plan"], st["checks"], st["infeasible"] = p, res, None
+            st["plan"], st["checks"], st["infeasible"], st["plan_ok"] = p, res, None, True
         else:
             st["infeasible"] = p["problems"]
-            tr.code("INFEASIBLE: " + "; ".join(p["problems"]) + (" -> keeping last valid plan" if st["plan"] else ""))
-            if not st["plan"]:
+            keep = st.get("plan_ok", bool(st["plan"] and not st["runs"][-1:] == [] and st["plan"].get("feasible")))
+            tr.code("INFEASIBLE: " + "; ".join(p["problems"]) + (" -> keeping last valid plan" if keep else ""))
+            if not keep:                         # no valid plan yet: show the newest partial plan
                 st["plan"], st["checks"] = p, res
         tr.code(f"checks {ok}/6 {'PASS' if ok == 6 else 'FAIL'}  total {p['budget']['total']:,} / "
                 f"{p['budget']['budget']:,}" + ("" if ok == 6 else "  failed: " + ", ".join(

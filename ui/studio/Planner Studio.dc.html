@@ -27,7 +27,7 @@
   </div>
 </header>
 
-<div style="display:grid;grid-template-columns:48px 210px 282px minmax(0,1fr) 372px;gap:0;min-height:0;padding:0 8px 8px 0">
+<div style="display:grid;grid-template-columns:{{ gridCols }};gap:0;min-height:0;padding:0 8px 8px 0">
 
   <nav style="display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:4px">
     <sc-for list="{{ rail }}" as="r" hint-placeholder-count="4">
@@ -36,6 +36,7 @@
     <a href="Brand Guide.dc.html" title="Brand guide" style="margin-top:auto;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center"><span style="width:18px;height:18px;background:#52525B;-webkit-mask:url(https://cdn.jsdelivr.net/npm/lucide-static@0.460.0/icons/circle-help.svg) center/contain no-repeat;mask:url(https://cdn.jsdelivr.net/npm/lucide-static@0.460.0/icons/circle-help.svg) center/contain no-repeat"></span></a>
   </nav>
 
+  <sc-if value="{{ drawer }}" hint-placeholder-val="{{ true }}">
   <aside style="background:#FFFFFF;border:1px solid #E4E4E7;border-right:none;border-radius:10px 0 0 10px;display:flex;flex-direction:column;min-height:0">
     <div style="padding:14px 12px 10px;display:flex;flex-direction:column;gap:10px">
       <span style="font-size:15px;font-weight:500">Runs</span>
@@ -99,6 +100,7 @@
     </div>
   </aside>
 
+  </sc-if>
   <section data-screen-label="Pipeline canvas" style="position:relative;min-width:0;min-height:0;overflow:hidden;background-color:#F4F4F5;background-image:radial-gradient(#D4D4D8 1px, transparent 1px);background-size:16px 16px;border-top:1px solid #E4E4E7;border-bottom:1px solid #E4E4E7">
     <sc-if value="{{ infeasible }}" hint-placeholder-val="{{ false }}">
       <div style="position:absolute;top:14px;left:14px;z-index:3;display:flex;align-items:center;gap:7px;height:30px;padding:0 11px;border-radius:6px;background:#FEF2F2;border:1px solid #FECACA;color:#B91C1C;font-size:13px;font-weight:500"><span style="width:14px;height:14px;background:#B91C1C;-webkit-mask:url(https://cdn.jsdelivr.net/npm/lucide-static@0.460.0/icons/triangle-alert.svg) center/contain no-repeat;mask:url(https://cdn.jsdelivr.net/npm/lucide-static@0.460.0/icons/triangle-alert.svg) center/contain no-repeat"></span>{{ infeasibleText }}</div>
@@ -223,7 +225,7 @@
   <sc-if value="{{ toastShow }}" hint-placeholder-val="{{ false }}">
     <div onClick="{{ toastClose }}" style="position:fixed;right:24px;bottom:24px;z-index:50;max-width:460px;cursor:pointer;display:flex;gap:10px;align-items:flex-start;padding:14px 16px;border-radius:10px;background:{{ toastBg }};color:#FFFFFF;box-shadow:0 10px 30px rgba(0,0,0,0.25);font-size:13px;line-height:18px">
       <span style="font-size:18px;line-height:18px">{{ toastIcon }}</span>
-      <span style="display:flex;flex-direction:column;gap:4px"><b style="font-size:14px">{{ toastTitle }}</b><span>{{ toastText }}</span><span style="opacity:.75;font-size:12px">click to close</span></span>
+      <span style="display:flex;flex-direction:column;gap:4px"><b style="font-size:14px">{{ toastTitle }}</b><span>{{ toastText }}</span><sc-if value="{{ toastHasA }}" hint-placeholder-val="{{ false }}"><span style="display:flex;gap:8px;margin-top:6px"><button onClick="{{ toastA }}" style="all:unset;cursor:pointer;background:#FFFFFF;color:#18181B;padding:4px 10px;border-radius:6px;font-weight:500">{{ toastALabel }}</button><button onClick="{{ toastB }}" style="all:unset;cursor:pointer;border:1px solid rgba(255,255,255,.7);padding:4px 10px;border-radius:6px">{{ toastBLabel }}</button></span></sc-if><span style="opacity:.75;font-size:12px">click to close</span></span>
     </div>
   </sc-if>
 </div>
@@ -238,16 +240,22 @@ const PORTS=[[72,265],[130,190],[350,190],[150,520],[350,520],[430,160],[545,404
 const N=x=>x==null?'not reported':Number(x).toLocaleString('en-US');
 
 class Component extends DCLogic {
-  state={toast:null,d:null,err:'',presets:[],view:0,sel:{t:'node',id:'reader'},insp:'inspect',side:'checks',q:'',closed:{},draft:'',running:false,zoom:1};
+  state={drawer:false,toast:null,d:null,err:'',presets:[],view:0,sel:{t:'node',id:'planner'},insp:'inspect',side:'checks',q:'',closed:{},draft:'',running:false,zoom:1};
   componentDidMount(){this.load();fetch('/api/presets').then(r=>r.json()).then(p=>this.setState({presets:p})).catch(()=>{});}
   load(){fetch('/api/state',{cache:'no-store'}).then(r=>r.json()).then(d=>this.setState({d,view:d.runs?d.runs.length:0,err:''})).catch(e=>this.setState({err:'Cannot reach the planner server: '+e}));}
   mkToast(nd,n0){const nm=(nd.msgs||[]).slice(n0);if(!nm.length)return{icon:'⚠️',bg:'#B45309',title:'No new message read',text:'The model call failed or found nothing; the text stays in the file. Wait 10 s and retry.'};
     const m=nm[nm.length-1],g=m.guardian||{},dd=g.decision||m.statusText;
     if(dd==='QUARANTINED')return{icon:'🛡️',bg:'#B91C1C',title:'Message blocked',text:'It tries to change the planner\'s instructions or asks for secrets, so it was ignored. Your plan is unchanged.'};
     if(dd==='REJECTED')return{icon:'⛔',bg:'#B91C1C',title:'Change not applied',text:(g.reason||m.reason)};
-    if(nd.needs&&nd.needs.length)return{icon:'📝',bg:'#B45309',title:'Plan started — a few details needed',text:'Please provide: '+nd.needs.join('; ')+'.'};
+    if(nd.needs&&nd.needs.length){const n=nd.needs[0],area=/venue/i.test(n)?'venue':/cater|food/i.test(n)?'food':/judge|team size/i.test(n)?'judging':'';
+      const T={venue:['Venue options: <name> seats <number> for Rs <price>; <name> seats <number> for Rs <price>.','Skip the venue, we will arrange it ourselves.'],
+               food:['Catering: Rs <price> per person.','Skip catering, food is not needed.'],
+               judging:['Judges: <number> available, Rs <fee> each, <minutes> minutes per team, max <number> teams per judge.','Skip judging, there is no judging.']}[area];
+      return{icon:'📝',bg:'#B45309',title:'Plan started — a few details needed',text:'Please provide: '+nd.needs.join('; ')+'.',
+        a:T?`Provide ${area}`:'',af:()=>T&&this.setState({draft:T[0],insp:'add'}),b:T?`Skip ${area}`:'',bf:()=>T&&this.post(T[1])};}
     if(!nd.complete)return{icon:'⚠️',bg:'#B45309',title:'Plan needs attention',text:nd.infeasible||'See the plan for details.'};
     return{icon:'✅',bg:'#15803D',title:nm.length>1||nd.runs.length===1?'Your plan is ready':'Plan updated',text:`Total Rs ${nd.plan.total} of Rs ${nd.plan.budget} · Rs ${nd.plan.remaining} left · ${(nd.checks||[]).filter(c=>c.ok).length}/6 checks passed`};}
+  post(text){const d=this.state.d||{};this.setState({running:true,toast:null});fetch('/api/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})}).then(r=>r.json()).then(nd=>this.setState({toast:this.mkToast(nd,nd.newEvent?0:(d.msgs||[]).length),d:nd,view:(nd.runs||[]).length,draft:'',running:false,insp:'inspect',sel:{t:'node',id:'planner'}})).catch(e=>this.setState({running:false,err:'Update failed: '+e}));}
   download(name,text){const b=new Blob([text],{type:'text/plain'});const u=URL.createObjectURL(b);const el=document.createElement('a');el.href=u;el.download=name;el.click();setTimeout(()=>URL.revokeObjectURL(u),500);}
   renderVals(){
     const s=this.state,d=s.d||{runs:[],msgs:[],checks:[],file:'pack.txt',calls:0,tokens:0};
@@ -289,11 +297,13 @@ class Component extends DCLogic {
     const sideRows=s.side==='checks'?checks.map(([n,o])=>({name:n,icon:I(o?'circle-check':'circle-x'),color:o?'#16A34A':C.red,value:o?'Pass':'Fail',vfg:o?C.green:C.red})):(P?[['users','Headcount',P.headcount],['users-round','Teams',P.teams],['gavel','Judges',P.judges],['wallet','Total',P.total],['piggy-bank','Remaining',P.remaining],['coins','Session tokens',N(d.tokens)]]:[]).map(r=>({icon:I(r[0]),name:r[1],value:String(r[2]),color:'#71717A',vfg:'#18181B'}));
     const sideTabs=[['checks','Checks'],['figures','Figures']].map(([id,label])=>{const on=s.side===id;return{label,bg:on?'#FFFFFF':'transparent',fg:on?'#18181B':'#71717A',shadow:on?'0 1px 2px rgba(0,0,0,0.08)':'none',select:()=>this.setState({side:id})};});
     const runList=runs.map(r=>({label:`Run ${r.r} · ${r.title}`,icon:I(r.failed?'circle-x':r.icon),color:r.failed?'#DC2626':r.color,bg:r.r===view?'#F4F4F5':'transparent',select:()=>this.setState({view:r.r})}));
-    const rail=[['inspect','workflow','Pipeline'],['add','message-square-plus','Add message']].map(([id,icon,label])=>({icon:I(icon),label,bg:s.insp===id?'#E4E4E7':'transparent',fg:s.insp===id?'#18181B':'#52525B',select:()=>this.setState({insp:id})}));
+    const rail=[['drawer',s.drawer?'panel-left-close':'panel-left-open','Runs & messages'],['inspect','workflow','Pipeline'],['add','message-square-plus','Add message']].map(([id,icon,label])=>{const on=id==='drawer'?s.drawer:s.insp===id;return{icon:I(icon),label,bg:on?'#E4E4E7':'transparent',fg:on?'#18181B':'#52525B',select:()=>id==='drawer'?this.setState({drawer:!s.drawer}):this.setState({insp:id})};});
     const inspTabs=[['inspect','Inspector'],['add','Add message']].map(([id,label])=>{const on=s.insp===id;return{label,bg:on?'#FFFFFF':'transparent',fg:on?'#18181B':'#71717A',shadow:on?'0 1px 2px rgba(0,0,0,0.08)':'none',select:()=>this.setState({insp:id})};});
     const quick=(s.presets||[]).map(p=>({label:p.label,fg:'#27272A',onClick:()=>this.setState({draft:p.text})}));
     const can=!s.running&&(!!s.draft.trim()||!maxRun);
     return{
+      drawer:s.drawer,gridCols:s.drawer?'48px 210px 282px minmax(0,1fr) 372px':'48px minmax(0,1fr) 372px',
+      toastHasA:!!(s.toast&&s.toast.a),toastALabel:s.toast?s.toast.a||'':'',toastBLabel:s.toast?s.toast.b||'':'',toastA:()=>s.toast&&s.toast.af&&s.toast.af(),toastB:()=>s.toast&&s.toast.bf&&s.toast.bf(),
       toastShow:!!s.toast,toastIcon:s.toast?s.toast.icon:'',toastBg:s.toast?s.toast.bg:'#15803D',toastTitle:s.toast?s.toast.title:'',toastText:s.toast?s.toast.text:'',toastClose:()=>this.setState({toast:null}),
       fileName:d.file,fileMeta:`${d.nmsgs||0} messages`,checksLabel:checks.length?`${pass}/6 checks`:'no plan yet',checksBg:pass===6&&!inf?'#DCFCE7':'#FEE2E2',checksFg:pass===6&&!inf?C.green:C.red,checksIcon:I(pass===6&&!inf?'circle-check':'circle-x'),
       dlPlan:()=>this.download('plan.md',d.planMd||''),dlTrace:()=>this.download('trace.txt',d.traceTxt||''),
@@ -305,7 +315,7 @@ class Component extends DCLogic {
       edges:EDGES.map(x=>({d:x})),ports:PORTS.map(([x,y])=>({x,y})),nodes,
       inspTabs,isInspect:s.insp==='inspect',isAdd:s.insp==='add',selTitle,selIcon,selStatus,selStatusFg,fields,boxes,
       draft:s.draft,onDraft:e=>this.setState({draft:e.target.value}),quick,sendBg:can?'#2563EB':'#A1A1AA',sendLabel:s.running?'Running…':maxRun?'Run update':'Run full pack',
-      send:()=>{if(!can)return;this.setState({running:true});fetch('/api/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:s.draft.trim()})}).then(r=>r.json()).then(nd=>this.setState({toast:this.mkToast(nd,(d.msgs||[]).length),d:nd,view:(nd.runs||[]).length,draft:'',running:false,insp:'inspect',sel:{t:'node',id:'resolver'}})).catch(e=>this.setState({running:false,err:'Update failed: '+e}));}
+      send:()=>{if(!can)return;this.post(s.draft.trim());}
     };
   }
 }
