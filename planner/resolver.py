@@ -7,10 +7,10 @@ JUDGING = "judges_available min_per_team max_teams_per_judge judges_per_team".sp
 OWN = {**{k: {"authority"} for k in EVENT}, **{k: {"judging", "authority"} for k in JUDGING},
        "budget": {"authority", "finance"}, "reserve": {"authority", "finance"},
        "honorarium": {"judging", "authority", "finance"},
-       "venue": {"venue", "authority"}, "seat_factor": {"venue", "authority"},   # authority may relay/approve quotes
+       "venue": {"venue"}, "seat_factor": {"venue", "authority"},
        "venue_require": {"authority", "venue", "official", "finance"},
        "venue_exclude": {"authority", "venue", "official"},
-       "food": {"caterer", "authority"}, "food_require": {"authority"}, "diet": {"authority", "caterer"},
+       "food": {"caterer"}, "food_require": {"authority"}, "diet": {"authority", "caterer"},
        "judges_change": {"judging", "authority", "judge"}, "late": None}
 NAMED = {"venue": "name", "food": "name", "cost": "name", "block": "name", "diet": "type",
          "venue_require": "feature", "venue_exclude": "name", "extra_people": "who",

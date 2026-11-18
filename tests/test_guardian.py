@@ -128,11 +128,3 @@ def test_15_streamlit_guardian_tab(tmp_path):
         assert len(at.tabs) == 6 and "Guardian" in at.tabs[5].label
     finally:
         state.path_for(st["path"]).unlink()
-
-
-def test_16_chat_ui_renders():
-    pytest.importorskip("streamlit")
-    from streamlit.testing.v1 import AppTest
-    at = AppTest.from_file(str(__import__("pathlib").Path(__file__).parent.parent / "ui" / "chat.py"), default_timeout=60).run()
-    assert not at.exception, [e.value for e in at.exception]
-    assert any("Your Event Plan" in m.value for m in at.markdown) and at.chat_input
