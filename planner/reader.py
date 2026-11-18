@@ -226,8 +226,9 @@ def unread_lines(chunk, facts):
         body = re.sub(r"^organizer \(planner ui\)[^:]*:", "", body, flags=re.I)
         if not re.search(r"\d", body):
             continue
-        if not any(abs(n - u) < 0.01 for n in numbers(body) for u in used):
-            out.append(line.strip())
+        mentions = re.findall(r"\d[\d,]*(?:\.\d+)?\s*(?:k|lakh|lac|lacs|hazaar|hazar|thousand|crore)?\b", body, re.I)
+        if any(not any(abs(n - u) < 0.01 for n in numbers(x) for u in used) for x in mentions):
+            out.append(line.strip())             # some number on this line was not used by any fact
     return out
 
 

@@ -260,10 +260,11 @@ def build(st, cfg):
     sf = g("seat_factor")
     pct = num(sf.get("pct"), 100) if isinstance(sf, dict) else num(sf, 100)
     vnames = {norm(d.get("name", "")) for d in of("venue")}
-    bad_req = [d.get("feature") for d in of("venue_require") if norm(d.get("feature", "")) in vnames]
+    is_name = lambda f: norm(f) in vnames or re.search(r"\b(hall|room|marquee|lawn|auditorium|banquet)\b", str(f), re.I)
+    bad_req = [d.get("feature") for d in of("venue_require") if is_name(d.get("feature", ""))]
     if bad_req:
         notes.append(f"ignored venue requirement(s) {', '.join(map(str, bad_req))}: a venue name is not a feature")
-    req = sorted({feat(d.get("feature", "")) for d in of("venue_require") if norm(d.get("feature", "")) not in vnames})
+    req = sorted({feat(d.get("feature", "")) for d in of("venue_require") if not is_name(d.get("feature", ""))})
     excl = {norm(d.get("name", "")) for d in of("venue_exclude")}
     valid, rejected = [], []
     for d in of("venue"):

@@ -65,6 +65,7 @@ def write(st):
     (OUT / "trace.jsonl").write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in st["trace"]) + "\n",
                                      encoding="utf-8")
     (OUT / "plan.md").write_text(plan_md(st), encoding="utf-8")
+    (OUT / "submission.txt").write_text(submission(st), encoding="utf-8")
 
 
 def show(st, since=0):
@@ -102,3 +103,39 @@ def show(st, since=0):
            if m["n"] > since or m["status"] not in ("applied",)])
     table("Model calls and tokens (reported by API)", ["#", "Run", "Model", "Area", "Prompt", "Completion", "Total", ""],
           token_rows(st) + [("", "", "", "TOTAL", "", "", f"{st['tokens']:,}", "")])
+
+
+AREA_NAME = {"reading": "reading messages", "venue": "venue constraint", "food": "food constraint",
+             "schedule": "schedule constraint", "judging": "judging constraint", "budget": "budget constraint"}
+
+
+def submission(st):
+    """Upload file: the plan in five areas + one trace line per AI call + total."""
+    p, L = st.get("plan"), []
+    if p:
+        F, V, FD, B, SC = p["figures"], p["venue"], p["food"], p["budget"], p["schedule"]
+        hon = next((l for l in B["lines"] if l["line"].startswith("Judges")), None)
+        ok = sum(c["ok"] for c in st.get("checks") or [])
+        ev = F.get("event") if F.get("event") not in (None, "event") else ""
+        L += [f"EVENT PLAN{' — ' + ev if ev else ''} · {F['headcount']} people · budget Rs {rs(B['budget'])}", ""]
+        L += ["1. VENUE", f"   {V.get('name') or 'not chosen'} — {V.get('seats', '-')} seats — Rs {rs(V.get('cost', 0))}"
+              f" (needs {F['headcount']} seats)"] + [f"   not chosen: {r['name']} ({r['why']})" for r in V["rejected"]]
+        L += ["", "2. SCHEDULE" + (" (start time assumed)" if SC["assumed"] else "")]
+        L += [f"   {b['time']}  {b['name']} ({b['min']} min)" for b in SC["blocks"]]
+        L += ["", "3. FOOD", f"   {FD.get('name') or 'not chosen'} — quantity {FD.get('boxes', '-')} (everyone attending) — "
+              f"Rs {rs(FD.get('pph', 0))} each" + (f" + fee Rs {rs(FD['fee'])}" if FD.get("fee") else "") + f" = Rs {rs(FD.get('cost', 0))}"]
+        L += ["", "4. JUDGING", (f"   {F['judges_used']} judges (of {F['judges_available']} available) for {F['teams']} teams — "
+              f"{F['rounds']} rounds × {F['min_per_team']} min — cost Rs {rs(hon['amount']) if hon else 0}")
+              if F.get("judging", True) else "   no judging for this event"]
+        L += ["", "5. BUDGET"] + [f"   {l['line']:<32} Rs {rs(l['amount']):>10}" for l in B["lines"]]
+        L += [f"   {'TOTAL':<32} Rs {rs(B['total']):>10}  of Rs {rs(B['budget'])} — "
+              + ("FITS" if B["total"] + B["reserve"] <= B["budget"] else "DOES NOT FIT") + f" (Rs {rs(B['remaining'])} left)",
+              "", f"CHECKS: {ok}/6 passed" + ("" if not st.get("infeasible") else " · " + "; ".join(st["infeasible"]))]
+    L += ["", "TRACE (one line per AI call)"]
+    for e in [e for e in st["trace"] if e["t"] == "call"]:
+        u = e.get("usage")
+        tok = f"prompt {u['prompt']} + completion {u['completion']} = {u['total']} tokens" if u else "tokens not reported"
+        L.append(f"#{e['n']} | model {e['model']} | {AREA_NAME.get(e['area'], e['area'])} | "
+                 + (f"FAILED ({e['error'][:60]})" if e.get("error") else tok))
+    L.append(f"TOTAL: {st['calls']} AI call(s) · {st['tokens']:,} tokens")
+    return "\n".join(L) + "\n"
