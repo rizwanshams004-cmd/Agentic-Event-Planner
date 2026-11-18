@@ -1,35 +1,38 @@
-EVENT PLAN · 105 people · budget Rs 400,000
+EVENT PLAN · 136 people · budget Rs 400,000
 
 1. VENUE
-   Hall B — 120 seats — Rs 70,000 (needs 105 seats)
-   not chosen: Hall A (80 seats < 105 people)
+   Hall 2 — 180 seats — Rs 110,000 (needs 136 seats)
+   not chosen: Seminar Room (100 seats < 136 people)
+   not chosen: Hall 1 (lacks accessible (not mentioned for this venue))
+   not chosen: Hall 3 (not available)
 
 2. SCHEDULE (start time assumed)
-   10:00-10:15  registration (15 min)
-   10:15-12:30  Build (hacking) (135 min)
-   12:30-12:45  prayer break (15 min)
-   12:45-13:15  Meal break (30 min)
-   13:15-13:45  Judging (3 rounds × 10 min, 10 judges in parallel) (30 min)
-   13:45-14:00  closing (15 min)
+   10:00-10:15  Opening / welcome (15 min)
+   10:15-11:35  Build (hacking) (80 min)
+   11:35-11:55  prayer break (20 min)
+   11:55-12:25  Meal break (30 min)
+   12:25-13:45  Judging (4 rounds × 20 min, 8 judges in parallel) (80 min)
+   13:45-14:00  Closing (15 min)
 
 3. FOOD
-   Lunch — quantity 105 (everyone attending) — Rs 800 each = Rs 84,000
+   biryani box — quantity 136 (everyone attending) — Rs 850 each = Rs 115,600
 
 4. JUDGING
-   10 judges (of 10 available) for 30 teams — 3 rounds × 10 min — cost Rs 30,000
+   8 judges (of 15 available) for 30 teams — 4 rounds × 20 min — cost Rs 32,000
 
 5. BUDGET
-   Required: prizes                 Rs     50,000
-   Required: internet               Rs     10,000
-   Required: printing               Rs      5,000
-   Venue: Hall B                    Rs     70,000
-   Judges' honorarium               Rs     30,000
-   Food: Lunch                      Rs     84,000
-   TOTAL                            Rs    249,000  of Rs 400,000 — FITS (Rs 151,000 left)
+   Committed: trophies              Rs     60,000
+   Committed: banners               Rs     15,000
+   Venue: Hall 2                    Rs    110,000
+   Judges' honorarium               Rs     32,000
+   Food: biryani box                Rs    115,600
+   service charge                   Rs     11,560
+   photo booth (optional)           Rs     30,000
+   TOTAL                            Rs    374,160  of Rs 400,000 — FITS (Rs 25,840 left)
 
 CHECKS: 6/6 passed
 
 TRACE (one line per AI call)
-#1 | model openai/gpt-oss-20b | reading messages | prompt 1547 + completion 2391 = 3938 tokens
-#2 | model openai/gpt-oss-20b | reading messages | prompt 1384 + completion 540 = 1924 tokens
-TOTAL: 2 AI call(s) · 5,862 tokens
+#1 | model openai/gpt-oss-20b | reading messages | prompt 1853 + completion 1250 = 3103 tokens
+#2 | model groq/openai/gpt-oss-20b | venue constraint | FAILED (HTTPError: 429 Client Error: Too Many Requests for url: http)
+TOTAL: 2 AI call(s) · 3,103 tokens

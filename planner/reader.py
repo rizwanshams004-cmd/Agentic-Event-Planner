@@ -199,7 +199,7 @@ def read(chunk, known, budget, tr):
         msgs.append(dict(role_override=f"model said {m.get('role')}, name rule says {role}"
                          if role != m.get("role") and role != "organizer" else None,
                          frm=frm, role=role,
-                         date=date, facts=good, dropped=bad, other=m.get("other") or [], note=str(m.get("note") or "")))
+                         date=date, facts=good, dropped=bad, other=m.get("other") or [], note="" if str(m.get("note") or "").lower().startswith("why no facts") else str(m.get("note") or "")))
     venue_features(chunk, msgs, tr)
     if not any(m["facts"] for m in msgs) and len(re.findall(r"\d", chunk)) >= 6:
         raise LLMError("reader returned no facts for a message full of numbers (bad model output); text not consumed")
