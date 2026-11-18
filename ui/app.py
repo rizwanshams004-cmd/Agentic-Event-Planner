@@ -104,7 +104,7 @@ with t2:
             st.write(m["reason"])
             facts = [f for f in S["facts"] if f["msg"] == m["n"]]
             if facts:
-                st.dataframe([{"key": f["k"], "value": json.dumps(f["v"], ensure_ascii=False), "quote": f["q"],
+                st.dataframe([{"key": f["k"], "value": json.dumps(f["v"], ensure_ascii=False), "quote": str(f["q"]),
                                "status": f["status"], "reason": f["reason"]} for f in facts], hide_index=True)
 
 with t3:
@@ -140,7 +140,7 @@ with t4:
         st.write(f"Areas recomputed (dependency map): **{', '.join(run['areas']) or 'none'}** · "
                  f"actually changed: **{', '.join(run['changed']) or 'none'}**")
         if run["before"]:
-            st.dataframe([{"figure": k, "before": run["before"].get(k), "after": run["after"].get(k)}
+            st.dataframe([{"figure": k, "before": str(run["before"].get(k, "")), "after": str(run["after"].get(k, ""))}
                           for k in run["after"]], hide_index=True)
         for f in run["facts"]:
             st.write("• " + f)
@@ -148,7 +148,7 @@ with t4:
 with t5:
     rows = report.token_rows(S)
     st.subheader("Model calls and tokens (as reported by the API)")
-    st.table([{"#": r[0], "Run": r[1], "Model": r[2], "Area": r[3], "Prompt": r[4], "Completion": r[5],
-               "Total": r[6], "Status": r[7]} for r in rows] +
+    st.table([{k: str(v) for k, v in zip(("#", "Run", "Model", "Area", "Prompt", "Completion", "Total",
+                                          "Status"), r)} for r in rows] +
              [{"#": "", "Run": "", "Model": "", "Area": "TOTAL", "Prompt": "", "Completion": "",
                "Total": f"{S['tokens']:,}", "Status": f"{S['calls']} calls"}])
