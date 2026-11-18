@@ -143,3 +143,9 @@ def test_17_general_event_without_teams_or_judges():
          "Garden Lawn seats 120 for Rs 250000; menu Rs 3000 per head", "update")
     assert st["infeasible"] is None and all(c["ok"] for c in st["checks"])
     assert st["plan"]["budget"]["total"] == 250000 + 100 * 3000 and not st["plan"]["judging"]["grid"]
+
+
+def test_18_judging_minutes_written_as_block_are_repaired():
+    from planner import reader
+    f = {"k": "block", "v": {"name": "team judging", "min": 15, "required": True}, "q": "15 minutes per team"}
+    assert reader.repair(f, "judging") and f["k"] == "min_per_team" and f["v"] == 15

@@ -86,11 +86,15 @@ def view(st):
     for f in st["facts"]:
         facts.setdefault(f["msg"], []).append(f)
     msgs = []
+    audit_text = {a["msg"]: a.get("text", "") for a in st.get("audit", [])}
     for m in st["msgs"]:
         fs = facts.get(m["n"], [])
         msgs.append(dict(i=m["n"], frm=m["frm"], role=m["role"], date=m["date"] or "undated", run=m["run"],
                          status=status_key(m, inf_runs), statusText=m["status"], reason=m["reason"],
-                         ch="whatsapp" if "whatsapp" in m["frm"].lower() else "email",
+                         ch="whatsapp" if "whatsapp" in m["frm"].lower() else "pasted" if m["role"] == "organizer" else "email",
+                         text=audit_text.get(m["n"], ""),
+                         decision=((m.get("guardian") or {}).get("decision", "") + ". " if (m.get("guardian") or {}).get("decision")
+                                   in ("QUARANTINED", "FLAGGED") else "") + m["reason"],
                          quotes="\n".join(f"“{f['q']}”" for f in fs if f.get("q")) or m.get("note") or "(no quote)",
                          facts="\n".join(f"{human(f)}   [{f['status']}]" for f in fs) or "none",
                          guardian=m.get("guardian") or {}))

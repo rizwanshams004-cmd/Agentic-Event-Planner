@@ -118,6 +118,9 @@ def repair(f, role):
     if k == "duration_min" and role == "judging":
         f["k"] = "min_per_team"
         return "duration from the judging coordinator -> min_per_team"
+    if k == "block" and re.search(r"judg|per team|presentation|pitch", str(v.get("name", "")) + " " + f.get("q", ""), re.I)             and tonum(v.get("min")) and role in ("judging", "authority", "organizer"):
+        f["k"], f["v"] = "min_per_team", tonum(v.get("min"))
+        return "judging time per team written as a schedule block -> min_per_team"
     if k == "food" and tonum(v.get("price_per_head")) == 0:
         f["v"] = {x: y for x, y in v.items() if x not in ("price_per_head", "min_order")}
         return "food item priced 0 per head -> fee-only line"
