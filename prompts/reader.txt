@@ -21,7 +21,7 @@ Rules:
 - Plain numbers: lakh/lac=100000, k/hazaar/thousand=1000; hours -> duration_min in minutes; percent as number.
 - Roman Urdu: "ab ... hoga" = new value from now; "wala" = option.
 - Request wording (can we, we would like, please arrange) -> "req":true; extras someone asks for -> cost status "optional".
-- Spend already approved/booked/paid -> status "committed".
+- Spend already approved/booked/paid -> status "committed". Expenses simply listed by the organiser are "required"; only "optional"/"if budget allows"/requests are "optional".
 - Use only these keys. Anything not expressible -> "other".
 - Reuse these existing names where they match: {known_names}
 - No arithmetic, no opinions; do not judge correctness. Nothing to plan -> "facts":[] with a note.

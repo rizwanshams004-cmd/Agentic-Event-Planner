@@ -39,7 +39,7 @@ def model_of(p):
     return os.environ.get(p.upper() + "_MODEL", P[p][2])
 
 
-def _call(p, prompt, timeout):
+def _call(p, prompt, timeout, json_mode=True):
     url, key, _ = P[p]
     model = model_of(p)
     if p == "anthropic":
@@ -54,8 +54,9 @@ def _call(p, prompt, timeout):
     if p == "ollama":
         url = os.environ.get("OLLAMA_URL", "http://localhost:11434") + url
     h = {"Authorization": "Bearer " + os.environ[key]} if key else {}
-    body = {"model": model, "temperature": 0, "max_tokens": 3000, "response_format": {"type": "json_object"},
-            "messages": [{"role": "user", "content": prompt}]}
+    body = {"model": model, "temperature": 0, "max_tokens": 3000, "messages": [{"role": "user", "content": prompt}]}
+    if json_mode:
+        body["response_format"] = {"type": "json_object"}
     if "gpt-oss" in model:
         body["reasoning_effort"] = "low"   # fewer hidden reasoning tokens
     r = requests.post(url, headers=h, timeout=timeout, json=body)
@@ -91,8 +92,15 @@ class Budget:
                 try:
                     text, model, usage = _call(p, prompt, self.timeout)
                 except requests.HTTPError as e:      # rate limit: wait for the reset once if it is short
+                    code = e.response.status_code if e.response is not None else 0
+                    if code == 400 and p != "anthropic":   # strict JSON check failed: same model once, JSON mode off
+                        self.tr.code(f"provider {p} returned 400 (JSON validation); retrying once without JSON mode "
+                                     f"(same numbered call)")
+                        text, model, usage = _call(p, prompt, self.timeout, json_mode=False)
+                        self.tr.call(self.st["calls"], model, area, prompt, text, usage, secs=time.time() - t)
+                        return text
                     wait = float(e.response.headers.get("retry-after", 99)) if e.response is not None else 99
-                    if e.response is None or e.response.status_code != 429 or wait > 20:
+                    if e.response is None or code != 429 or wait > 20:
                         raise
                     self.tr.code(f"provider {p} rate-limited (429); waiting {wait:g} s then retrying (same numbered call)")
                     time.sleep(wait)

@@ -268,9 +268,19 @@ class H(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         global PACK
+        if self.path.startswith("/api/delete"):     # delete the current plan: file moved to events/trash, state removed
+            import shutil
+            (ROOT / "events" / "trash").mkdir(parents=True, exist_ok=True)
+            if PACK.exists():
+                shutil.move(str(PACK), str(ROOT / "events" / "trash" / f"{datetime.now():%H%M%S}-{PACK.name}"))
+            S.path_for(PACK).unlink(missing_ok=True)
+            PACK = ROOT / "events" / f"event-{datetime.now():%Y%m%d-%H%M%S}.txt"
+            return self.send_json({"empty": True, "file": PACK.name, "deleted": True})
         if not self.path.startswith("/api/add"):
             return self.send_json({"error": "not found"}, 404)
         text = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}").get("text", "").strip()
+        if not PACK.exists() and text:            # first message after a delete starts the new file
+            PACK.parent.mkdir(exist_ok=True)
         if not text:                              # empty: just (re)run the file as it is
             engine.run(str(PACK), echo=False)
             st = S.load(PACK)

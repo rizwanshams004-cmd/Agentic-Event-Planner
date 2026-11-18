@@ -116,6 +116,11 @@ def window_problems(blocks, wins, lates, start):
     return P
 
 
+def rounds_txt(jname):
+    m = re.search(r"\((\d+ rounds × \d+ min)", jname)
+    return m[1] if m else "derived"
+
+
 def schedule(cfg, dur, jname, jmin, of, g, main="Build (hacking)"):
     B, notes, probs = cfg["blocks"], [], []
     start, assumed = hm(g("start_time")), False
@@ -144,26 +149,36 @@ def schedule(cfg, dur, jname, jmin, of, g, main="Build (hacking)"):
             continue
         elif hm(d.get("at")) is not None:
             fixed.append({**b, "at": hm(d.get("at"))})
-        elif re.search(r"open|inaug|welcome|recit|tilawat|keynote", low):
+        elif re.search(r"open|inaug|welcome|recit|tilawat|keynote|registr|check.?in|arrival", low):
             pre.append(b)
         else:
             mid.append(b)
     judging = [mk(jname, jmin, "derived", "judging")] if jmin else []
-    others = pre + [df["opening"]] + mid + [df["lunch"], *judging, df["closing"]] + fixed
+    given_j = [num(d.get("min")) for d in of("block") if "judg" in str(d.get("name", "")).lower()]
+    if given_j and jmin and max(given_j) != jmin:
+        notes.append(f"judging block given as {max(given_j):g} min; planned {jmin} min = {rounds_txt(jname)}")
+    opening = [] if pre else [df["opening"]]                 # user's registration/opening replaces the default
+    main_given = any(re.search(r"coding|hack|build|competition|contest|session|workshop|programme|program|"
+                               r"ceremony|main|talk|performance|activit|game|match", b["name"], re.I) for b in mid)
+    others = pre + opening + mid + [df["lunch"], *judging, df["closing"]] + fixed
     build = dur - sum(b["min"] for b in others)
+    min_build = 0 if main_given else cfg["min_build"]   # the user's own main activity is the build time
     for k in ("lunch", "opening"):
         s = B[k].get("shrink_to")
-        if build < cfg["min_build"] and s and df[k]["src"] == "planner default" and df[k]["min"] > s:
-            notes.append(f"build under {cfg['min_build']} min: {k} shrunk {df[k]['min']}->{s} min")
+        if build < min_build and s and df[k]["src"] == "planner default" and df[k]["min"] > s:
+            notes.append(f"build under {min_build} min: {k} shrunk {df[k]['min']}->{s} min")
             build += df[k]["min"] - s
             df[k]["min"] = s
     if build < 0:
         probs.append(f"schedule needs {-build} more minutes than the event has")
         build = 0
-    bb = mk(main, build, f"filler = {dur} - other blocks", "build")
+    bb = mk("Buffer / free time" if main_given else main, build, f"filler = {dur} - other blocks", "build")
     lates = of("late")
-    for seq in ([*pre, df["opening"], bb, *mid, df["lunch"], *judging, df["closing"]],
-                [*pre, df["opening"], bb, *mid, *judging, df["lunch"], df["closing"]]):
+    seqs = ([[*pre, *opening, *mid, df["lunch"], *judging, bb, df["closing"]],
+             [*pre, *opening, *mid, *judging, df["lunch"], bb, df["closing"]]] if main_given else
+            [[*pre, *opening, bb, *mid, df["lunch"], *judging, df["closing"]],
+             [*pre, *opening, bb, *mid, *judging, df["lunch"], df["closing"]]])
+    for seq in seqs:
         blocks = lay(seq, fixed, start, notes)
         wp = window_problems(blocks, wins, lates, start)
         if not wp:
@@ -244,7 +259,11 @@ def build(st, cfg):
         reserve = int(num(rv))
     sf = g("seat_factor")
     pct = num(sf.get("pct"), 100) if isinstance(sf, dict) else num(sf, 100)
-    req = sorted({feat(d.get("feature", "")) for d in of("venue_require")})
+    vnames = {norm(d.get("name", "")) for d in of("venue")}
+    bad_req = [d.get("feature") for d in of("venue_require") if norm(d.get("feature", "")) in vnames]
+    if bad_req:
+        notes.append(f"ignored venue requirement(s) {', '.join(map(str, bad_req))}: a venue name is not a feature")
+    req = sorted({feat(d.get("feature", "")) for d in of("venue_require") if norm(d.get("feature", "")) not in vnames})
     excl = {norm(d.get("name", "")) for d in of("venue_exclude")}
     valid, rejected = [], []
     for d in of("venue"):

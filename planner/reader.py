@@ -118,10 +118,10 @@ def repair(f, role):
     if k == "extra_people" and BREAK.search(str(v.get("who", ""))):
         f["k"], f["v"] = "block", {"name": str(v.get("who")), "min": v.get("n"), "required": True}
         return "extra_people that names a break/session -> block"
-    if k == "duration_min" and role == "judging":
+    if k == "duration_min" and (role == "judging" or re.search(r"per (team|presentation|pitch)|each team|to judge", f.get("q", ""), re.I)):
         f["k"] = "min_per_team"
         return "duration from the judging coordinator -> min_per_team"
-    if k == "block" and re.search(r"judg|per team|presentation|pitch", str(v.get("name", "")) + " " + f.get("q", ""), re.I)             and tonum(v.get("min")) and role in ("judging", "authority", "organizer"):
+    if k == "block" and re.search(r"per (team|presentation|pitch)|each team", str(v.get("name", "")) + " " + f.get("q", ""), re.I)             and tonum(v.get("min")) and role in ("judging", "authority", "organizer"):
         f["k"], f["v"] = "min_per_team", tonum(v.get("min"))
         return "judging time per team written as a schedule block -> min_per_team"
     if k == "food" and tonum(v.get("price_per_head")) == 0:
@@ -181,6 +181,10 @@ def read(chunk, known, budget, tr):
         good, bad = _facts(m.get("facts"))
         date = m.get("date") if re.match(r"^\d{4}-\d{2}-\d{2}$", str(m.get("date"))) else None
         frm = str(m.get("from") or "?")
+        hdr = re.match(r"^\s*(?:\d+\)\s*)?([^:,\n]{2,60}?)\s*[,:]", chunk)
+        if frm.strip() in ("?", "", "sender", "<sender name or the notice header>") and len(d["msgs"]) == 1 and hdr:
+            tr.code(f"sender: model gave none; taken from the message header -> {hdr[1].strip()!r}")
+            frm = hdr[1].strip()
         role = role_of(frm, m.get("role"))
         if role != m.get("role"):
             tr.code(f"role  sender '{frm}': model said {m.get('role')!r}, sender-name rule says {role!r} -> {role}")
@@ -188,6 +192,8 @@ def read(chunk, known, budget, tr):
                          if role != m.get("role") and role != "organizer" else None,
                          frm=frm, role=role,
                          date=date, facts=good, dropped=bad, other=m.get("other") or [], note=str(m.get("note") or "")))
+    if len(msgs) == 1 and budget.left() > 0:
+        reread(chunk, msgs[0], prompt.rsplit("<<<MESSAGES", 1)[0], budget, tr)
     tr.code(f"reader: {len(msgs)} message(s), {sum(len(m['facts']) for m in msgs)} fact(s), "
             f"{sum(len(m['dropped']) for m in msgs)} dropped by schema check")
     return msgs
@@ -201,11 +207,61 @@ def infer_area(text):
     return next((a for a, rx in AREA_WORDS if re.search(rx, str(text), re.I)), "schedule")
 
 
-def escape(other, M, budget, tr):
+def fact_numbers(facts):
+    out = set()
+    for f in facts:
+        v = f["v"]
+        for x in ([v] if not isinstance(v, dict) else [v.get(k) for k in NUMF]):
+            if tonum(x) is not None:
+                out.add(abs(float(tonum(x))))
+    return out
+
+
+def unread_lines(chunk, facts):
+    """Lines that carry numbers none of which made it into a fact (headers, years and list numbers ignored)."""
+    used, out = fact_numbers(facts), []
+    for line in chunk.splitlines():
+        body = re.sub(r"^\s*(\d+[).]|[-*•])\s*", "", line)
+        body = re.sub(r"\b(19|20)\d\d\b|\b\d{1,2} (jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*", "", body, flags=re.I)
+        body = re.sub(r"^organizer \(planner ui\)[^:]*:", "", body, flags=re.I)
+        if not re.search(r"\d", body):
+            continue
+        if not any(abs(n - u) < 0.01 for n in numbers(body) for u in used):
+            out.append(line.strip())
+    return out
+
+
+def reread(chunk, m, head, budget, tr):
+    """Completeness check: if some lines with numbers produced no fact, one extra reading call on just those lines."""
+    lines = unread_lines(chunk, m["facts"])
+    if not lines:
+        return
+    tr.code(f"completeness: {len(lines)} line(s) with numbers were not read -> one extra reading call: {lines[:3]}")
+    text = f"{m['frm']}: " + "\n".join(lines)
+    try:
+        d = parse(budget.call(head.replace("{known_names}", "none") + "<<<MESSAGES\n" + text + "\nMESSAGES>>>", "reading"))
+    except LLMError as e:
+        tr.code(f"completeness re-read failed: {e}")
+        return
+    got = []
+    for mm in (d or {}).get("msgs") or []:
+        g, b = _facts(mm.get("facts"))
+        got += [f for f in g if f["k"] not in ("event_type",)]
+    have = {(f["k"], json.dumps(f["v"], sort_keys=True)) for f in m["facts"]}
+    new = [f for f in got if (f["k"], json.dumps(f["v"], sort_keys=True)) not in have]
+    m["facts"] += new
+    tr.code(f"completeness: re-read added {len(new)} fact(s): {[f['k'] for f in new]}")
+
+
+def escape(other, M, budget, tr, facts=()):
     """Area call for constraints outside the vocabulary (max 2 per message, inside the call budget)."""
     out = []
+    names = {str(f["v"].get("name", "")).lower() for f in facts if isinstance(f.get("v"), dict) and f["v"].get("name")}
     for it in other[:2]:
         text = it.get("t") if isinstance(it, dict) else str(it)
+        if names and len(str(text)) < 40 and any(n and n in str(text).lower() for n in names):
+            tr.code(f"escape hatch skipped (code, 0 tokens): '{text}' repeats an item already read from this message")
+            continue
         m = re.search(r"(\d+)\s*(?:-\s*)?min", str(text), re.I)
         if m and BREAK.search(str(text)):        # obvious timed break: map in code, no model call
             out.append(dict(k="block", v={"name": str(text), "min": int(m[1]), "required": True}, q=str(text)[:80], req=False))

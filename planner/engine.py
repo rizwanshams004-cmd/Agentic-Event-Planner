@@ -144,7 +144,7 @@ def apply(st, msgs, chunk, tr, C, budget=None, mode="full"):
         facts = list(m.get("facts", []))
         if m.get("other"):
             if budget:
-                facts += reader.escape(m["other"], M, budget, tr)
+                facts += reader.escape(m["other"], M, budget, tr, facts)
             else:
                 tr.code(f"msg {n} has constraints outside the vocabulary: {m['other']}")
         recs = []
