@@ -9,6 +9,7 @@ GET  /api/presets  test messages from tests/messages/*.txt (data files, not code
 import json
 import re
 import sys
+from datetime import datetime
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
@@ -20,7 +21,51 @@ from planner.trace import line  # noqa: E402
 
 STUDIO = ROOT / "ui" / "studio"
 PACK = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "pack.txt").resolve()
-N = lambda x: f"{x:,.0f}" if isinstance(x, (int, float)) else str(x)
+N = lambda x: f"{x:,.0f}" if isinstance(x, (int, float)) else "—" if x is None else str(x)
+SENDER = re.compile(r"^\s*(\d+\)\s*)?([A-Z][\w'’.&\- ]{1,40})(,[^:\n]{0,40})?:")
+
+
+def as_message(text):
+    """Text typed in the UI comes from the organiser unless it is a pasted message with its own sender line."""
+    m = SENDER.match(text)
+    label = m.group(2).lower() if m else ""
+    if m and len(label.split()) <= 4 and not re.search(r"quote|update|note|info|detail|plan|budget|price|option|request|"
+                                                       r"change|menu|schedule|here|wedding|event", label):
+        return text.strip()
+    return f"Organizer (planner UI), {datetime.now():%d %b %Y}: {text.strip()}"
+
+
+LABEL = {"students": "Guests / participants", "team_size": "Team size", "teams": "Teams", "duration_min": "Event length (min)",
+         "staff": "Staff", "budget": "Budget (Rs)", "judges_available": "Judges available", "honorarium": "Judge fee (Rs)",
+         "min_per_team": "Minutes per team", "max_teams_per_judge": "Max teams per judge", "event_type": "Event type",
+         "start_time": "Start time", "end_time": "End time"}
+
+
+def human(f):
+    """One readable line per fact (no JSON)."""
+    k, v = f["k"], f["v"]
+    if not isinstance(v, dict):
+        return f"{LABEL.get(k, k)}: {N(v) if isinstance(v, (int, float)) else v}"
+    if k == "venue":
+        bits = [f"{N(v['seats'])} seats" if v.get("seats") else "", f"Rs {N(v['price'])}" + ("/hour" if v.get("basis") == "per_hour" else "")
+                if v.get("price") is not None else "", ", ".join(v.get("features") or []), "not available" if v.get("available") is False else ""]
+        return f"Venue {v.get('name')}: " + " · ".join(b for b in bits if b)
+    if k == "food":
+        return f"Catering {v.get('name')}: " + " · ".join(b for b in [f"Rs {N(v['price_per_head'])} per person" if v.get("price_per_head") else "",
+                                                                       f"fee Rs {N(v['fee'])}" if v.get("fee") else ""] if b)
+    if k == "cost":
+        return f"Cost {v.get('name')}: Rs {N(v.get('amount'))} ({v.get('status', 'required')})"
+    if k == "claim":
+        return f"Claims {v.get('key')} = {N(v.get('value'))}"
+    if k == "block":
+        return f"Schedule item {v.get('name')}: {N(v.get('min'))} min"
+    if k == "late":
+        return f"{v.get('who')} late by {N(v.get('min'))} min"
+    if k == "judges_change":
+        return f"Judges change: {N(v.get('delta'))}"
+    if k == "venue_require":
+        return f"Venue must have: {v.get('feature')}"
+    return f"{LABEL.get(k, k)}: " + ", ".join(f"{a} {N(b) if isinstance(b, (int, float)) else b}" for a, b in v.items())
 
 
 def status_key(m, infeasible_runs):
@@ -47,7 +92,7 @@ def view(st):
                          status=status_key(m, inf_runs), statusText=m["status"], reason=m["reason"],
                          ch="whatsapp" if "whatsapp" in m["frm"].lower() else "email",
                          quotes="\n".join(f"“{f['q']}”" for f in fs if f.get("q")) or m.get("note") or "(no quote)",
-                         facts="\n".join(f"{f['k']} = {fmt(f['v'])}   [{f['status']}]" for f in fs) or "none",
+                         facts="\n".join(f"{human(f)}   [{f['status']}]" for f in fs) or "none",
                          guardian=m.get("guardian") or {}))
     runs = []
     cum = 0
@@ -76,7 +121,8 @@ def view(st):
                              r"(resolver|superseded|repair|role|grounding|impact|schema|lever|INFEAS)", e["text"]))))
     from planner import guardian
     v = guardian.verify(st.get("audit", []))
-    out = dict(audit=dict(ok=v["ok"], entries=len(st.get("audit", [])), problem=v["problem"]), file=PACK.name, nmsgs=len(msgs), msgs=msgs, runs=runs, calls=st["calls"], tokens=st["tokens"],
+    needs = (p or {}).get("needs") or [x[len("provide: "):] for x in st.get("infeasible") or [] if x.startswith("provide: ")]
+    out = dict(needs=needs, complete=bool(p) and not st.get("infeasible"), audit=dict(ok=v["ok"], entries=len(st.get("audit", [])), problem=v["problem"]), file=PACK.name, nmsgs=len(msgs), msgs=msgs, runs=runs, calls=st["calls"], tokens=st["tokens"],
                infeasible="; ".join(st.get("infeasible") or []), planMd=report.plan_md(st),
                traceTxt="\n".join(line(e) for e in st["trace"]) +
                         f"\n=== SESSION TOTAL: {st['calls']} model calls · {st['tokens']:,} tokens ===\n")
@@ -144,7 +190,7 @@ class H(SimpleHTTPRequestHandler):
             return self.send_json(view(st) if st else {"empty": True, "file": PACK.name})
         old = PACK.read_text(encoding="utf-8") if PACK.exists() else ""
         with open(PACK, "a", encoding="utf-8") as fh:
-            fh.write(("" if not old or old.endswith("\n\n") else "\n" if old.endswith("\n") else "\n\n") + text + "\n")
+            fh.write(("" if not old or old.endswith("\n\n") else "\n" if old.endswith("\n") else "\n\n") + as_message(text) + "\n")
         engine.run(str(PACK), echo=False)        # the same code path as `python run.py <file>`
         self.send_json(view(S.load(PACK)))
 

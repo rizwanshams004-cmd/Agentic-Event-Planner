@@ -128,3 +128,18 @@ def test_15_streamlit_guardian_tab(tmp_path):
         assert len(at.tabs) == 6 and "Guardian" in at.tabs[5].label
     finally:
         state.path_for(st["path"]).unlink()
+
+
+def test_17_general_event_without_teams_or_judges():
+    """A wedding: no team size or judges required; missing venue/catering are asked for, then the plan completes."""
+    st = state.fresh("w.txt")
+    msg = lambda facts: [dict(**{"from": "Organizer (planner UI)"}, role="organizer", date="2026-11-18", facts=facts)]
+    feed(st, msg([{"k": "event_type", "v": "wedding"}, {"k": "students", "v": 100}, {"k": "budget", "v": 1000000}]),
+         "wedding, 100 people, 10 lakh budget", "full")
+    assert st["plan"]["needs"] and not any("team" in n or "judge" in n for n in st["plan"]["needs"])
+    assert st["audit"][-1]["decision"] != "FLAGGED"
+    feed(st, msg([{"k": "venue", "v": {"name": "Garden Lawn", "seats": 120, "price": 250000}},
+                  {"k": "food", "v": {"name": "Menu", "price_per_head": 3000}}]),
+         "Garden Lawn seats 120 for Rs 250000; menu Rs 3000 per head", "update")
+    assert st["infeasible"] is None and all(c["ok"] for c in st["checks"])
+    assert st["plan"]["budget"]["total"] == 250000 + 100 * 3000 and not st["plan"]["judging"]["grid"]

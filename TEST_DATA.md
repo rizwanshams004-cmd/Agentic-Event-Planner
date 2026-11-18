@@ -17,6 +17,15 @@ UI + out/plan.md + out/trace.txt  (every model call with real API tokens)
 ```
 Only step 2 uses the AI model (1 call per run). Everything else is plain Python, 0 tokens.
 
+## Any event, in plain text (no sender line needed)
+Type in **Add message → Run update**. Text without a "Sender:" line counts as you, the organiser.
+1. `there is a wedding and you need to make a plan, 100 people, 10 lakh budget`
+   → popup "Plan started — a few details needed: venue options …; catering price per person". No team size or judges asked.
+2. `Venue options: Royal Marquee seats 150 for Rs 3 lakh, Garden Lawn seats 120 for Rs 2.5 lakh. Catering is Rs 3,000 per head.`
+   → popup "✅ Plan updated" · Garden Lawn · total Rs 550,000 of 10 lakh · 6/6 checks.
+3. `Budget ab 9 lakh hai.` → plan updated, Rs 350,000 left.
+Team size and judges are only used when you mention them (hackathons, competitions).
+
 ## Start
 ```
 python ui/studio.py pack.txt     # approved UI  -> http://localhost:8600

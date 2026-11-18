@@ -11,15 +11,16 @@ def run(p, st):
     R = []
     add = lambda n, ok, d: R.append(dict(name=n, ok=bool(ok), detail=d))
 
-    students, ts = int(g("students", 0)), int(g("team_size", 1))
-    teams = math.ceil(students / ts)
+    students, ts = int(g("students", 0)), int(g("team_size") or 0)
+    teams = math.ceil(students / ts) if ts else 0
     jpt, mx = F["judges_per_team"], g("max_teams_per_judge")
-    jn = math.ceil(teams * jpt / int(mx)) if mx else F["judges_used"]
+    jn = math.ceil(teams * jpt / int(mx)) if mx and teams else F["judges_used"]
     hc = students + jn + int(g("staff", 0)) + sum(int(num(d.get("n"))) for d in of("extra_people"))
     s = sum(l["amount"] for l in B["lines"])
-    fok = FD.get("cost") == FD.get("qty", 0) * FD.get("pph", 0) + FD.get("fee", 0)
+    food = bool(FD.get("name"))
+    fok = not food or FD.get("cost") == FD.get("qty", 0) * FD.get("pph", 0) + FD.get("fee", 0)
     add("Correct figures", teams == F["teams"] and jn == F["judges_used"] and hc == F["headcount"]
-        and FD.get("boxes") == hc and s == B["total"] and fok,
+        and (not food or FD.get("boxes") == hc) and s == B["total"] and fok,
         f"teams {teams}, judges {jn}, headcount {hc} = boxes {FD.get('boxes')}, lines sum {s:,} = total {B['total']:,}")
 
     add("Within budget", B["total"] + B["reserve"] <= int(g("budget", 0)),
@@ -40,15 +41,20 @@ def run(p, st):
     jb = next((b for b in bl if b["kind"] == "judging"), {"min": 0})
     wp = window_problems(bl, of("window"), of("late"), bl[0]["s"] if bl else 0)
     add("Schedule valid", total_min == F["duration_min"] and contiguous and have_req and
-        jb["min"] >= F["rounds"] * int(F["min_per_team"]) and not wp and all(b["min"] >= 0 for b in bl),
+        jb["min"] >= F["rounds"] * int(F["min_per_team"] or 0) and not wp and all(b["min"] >= 0 for b in bl),
         f"{total_min}/{F['duration_min']} min, no overlaps, required blocks present, judging {jb['min']} min"
         + (f"; {'; '.join(wp)}" if wp else ""))
 
     av = F["judges_available"]
-    add("Enough judges", av is not None and F["judges_used"] <= av and
-        (not mx or F["judges_used"] * int(mx) >= teams * jpt),
-        f"{F['judges_used']} used <= {av} available; {F['judges_used']} × {mx} >= {teams * jpt} team slots")
+    if not F.get("judging", True):
+        add("Enough judges", True, "no judging for this event")
+    else:
+        add("Enough judges", av is not None and F["judges_used"] <= av and
+            (not mx or F["judges_used"] * int(mx) >= teams * jpt),
+            f"{F['judges_used']} used <= {av} available; {F['judges_used']} × {mx} >= {teams * jpt} team slots")
 
-    areas = dict(venue=V.get("name"), schedule=bl, food=FD.get("name"), judging=J["grid"], budget=B["lines"])
+    areas = dict(venue=V.get("name"), schedule=bl, food=FD.get("name"), budget=B["lines"])
+    if F.get("judging", True):
+        areas["judging"] = J["grid"]
     add("All areas covered", all(areas.values()), ", ".join(k for k, v in areas.items() if v) or "none")
     return R

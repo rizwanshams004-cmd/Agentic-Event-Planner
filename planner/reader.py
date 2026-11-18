@@ -9,11 +9,11 @@ ROOT = Path(__file__).resolve().parent.parent
 PROMPT = (ROOT / "prompts/reader.txt").read_text(encoding="utf-8")
 AREA_PROMPT = (ROOT / "prompts/area.txt").read_text(encoding="utf-8")
 REPAIR = 'Fix this into valid JSON of the form {"msgs":[...]} exactly as described. Output JSON only.\n'
-ROLES = {"authority", "finance", "venue", "caterer", "judging", "judge", "student", "vendor", "official", "unknown"}
+ROLES = {"organizer", "authority", "finance", "venue", "caterer", "judging", "judge", "student", "vendor", "official", "unknown"}
 AREAS = ("venue", "schedule", "food", "judging", "budget")
 INT_KEYS = {"students", "team_size", "teams", "duration_min", "staff", "judges_available", "honorarium",
             "min_per_team", "max_teams_per_judge", "judges_per_team", "budget"}
-STR_KEYS = {"start_time", "end_time"}
+STR_KEYS = {"start_time", "end_time", "event_type"}
 DICT_KEYS = {"extra_people", "reserve", "seat_factor", "venue", "venue_require", "venue_exclude", "block",
              "window", "late", "food", "food_require", "diet", "judges_change", "cost", "claim"}
 NUMF = ("seats", "price", "amount", "n", "min", "delta", "pct", "price_per_head", "fee", "min_order", "value")
@@ -29,7 +29,7 @@ MULT = {"k": 1e3, "thousand": 1e3, "hazaar": 1e3, "hazar": 1e3, "hajar": 1e3, "l
 
 
 # Sender-name keywords -> role (first match wins). Generic role words, not pack data.
-ROLE_RULES = [("student", r"student|society|club|\bclass\b|batch"),
+ROLE_RULES = [("organizer", r"planner ui|\(you\)"), ("student", r"student|society|club|\bclass\b|batch"),
               ("judging", r"judg\w*\s+(coord|panel|lead|head)|coordinator"),
               ("judge", r"\bjudge\b"), ("finance", r"financ|account|treasur|bursar"),
               ("caterer", r"cater|food|kitchen|restaurant"), ("venue", r"venue|\bhall\b|auditorium|facilit|estate"),
@@ -178,7 +178,8 @@ def read(chunk, known, budget, tr):
         role = role_of(frm, m.get("role"))
         if role != m.get("role"):
             tr.code(f"role  sender '{frm}': model said {m.get('role')!r}, sender-name rule says {role!r} -> {role}")
-        msgs.append(dict(role_override=f"model said {m.get('role')}, name rule says {role}" if role != m.get("role") else None,
+        msgs.append(dict(role_override=f"model said {m.get('role')}, name rule says {role}"
+                         if role != m.get("role") and role != "organizer" else None,
                          frm=frm, role=role,
                          date=date, facts=good, dropped=bad, other=m.get("other") or [], note=str(m.get("note") or "")))
     tr.code(f"reader: {len(msgs)} message(s), {sum(len(m['facts']) for m in msgs)} fact(s), "

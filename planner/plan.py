@@ -116,7 +116,7 @@ def window_problems(blocks, wins, lates, start):
     return P
 
 
-def schedule(cfg, dur, jname, jmin, of, g):
+def schedule(cfg, dur, jname, jmin, of, g, main="Build (hacking)"):
     B, notes, probs = cfg["blocks"], [], []
     start, assumed = hm(g("start_time")), False
     wins = of("window")
@@ -148,8 +148,8 @@ def schedule(cfg, dur, jname, jmin, of, g):
             pre.append(b)
         else:
             mid.append(b)
-    judging = mk(jname, jmin, "derived", "judging")
-    others = pre + [df["opening"]] + mid + [df["lunch"], judging, df["closing"]] + fixed
+    judging = [mk(jname, jmin, "derived", "judging")] if jmin else []
+    others = pre + [df["opening"]] + mid + [df["lunch"], *judging, df["closing"]] + fixed
     build = dur - sum(b["min"] for b in others)
     for k in ("lunch", "opening"):
         s = B[k].get("shrink_to")
@@ -160,10 +160,10 @@ def schedule(cfg, dur, jname, jmin, of, g):
     if build < 0:
         probs.append(f"schedule needs {-build} more minutes than the event has")
         build = 0
-    bb = mk("Build (hacking)", build, f"filler = {dur} - other blocks", "build")
+    bb = mk(main, build, f"filler = {dur} - other blocks", "build")
     lates = of("late")
-    for seq in ([*pre, df["opening"], bb, *mid, df["lunch"], judging, df["closing"]],
-                [*pre, df["opening"], bb, *mid, judging, df["lunch"], df["closing"]]):
+    for seq in ([*pre, df["opening"], bb, *mid, df["lunch"], *judging, df["closing"]],
+                [*pre, df["opening"], bb, *mid, *judging, df["lunch"], df["closing"]]):
         blocks = lay(seq, fixed, start, notes)
         wp = window_problems(blocks, wins, lates, start)
         if not wp:
@@ -182,37 +182,48 @@ def build(st, cfg):
     notes, levers, probs = [], [], []
     st_, en_ = hm(g("start_time")), hm(g("end_time"))
     dur = g("duration_min") or (en_ - st_ if st_ is not None and en_ is not None else None)
-    missing = [n for n, x in (("students", g("students")), ("team_size", g("team_size")),
-                              ("duration", dur), ("budget", g("budget"))) if not x]
+    missing = [n for k, n in (("students", "how many guests / participants"), ("budget", "the total budget"))
+               if not g(k)]
     if missing:
-        return None, [f"missing facts: {', '.join(missing)}"]
-    students, ts, dur, budget = int(g("students")), int(g("team_size")), int(dur), int(g("budget"))
-    teams = math.ceil(students / ts)
+        return None, [f"provide: {m}" for m in missing]
+    if not dur:
+        dur = int(cfg["default_duration_min"])
+        notes.append(f"event length not given: planner assumption {dur // 60} h")
+    students, dur, budget = int(g("students")), int(dur), int(g("budget"))
+    ts = int(g("team_size") or 0)
+    teams = math.ceil(students / ts) if ts else 0
     jpt = int(g("judges_per_team", cfg["judges_per_team"]))
     mx, avail = g("max_teams_per_judge"), g("judges_available")
     if avail is not None:
         avail = int(avail) + int(sum(num(d.get("delta")) for d in of("judges_change")))
-    if mx:
-        need = math.ceil(teams * jpt / int(mx))
-    else:
-        need = avail or 0
-        notes.append("no max teams per judge given: all available judges are used")
-    if not need:
-        probs.append("no judges: judges available not given")
-    elif avail is not None and need > avail:
-        probs.append(f"needs {need - avail} more judge(s): {need} needed for {teams} teams at max {mx}/judge, "
-                     f"only {avail} available")
-    used = need or 1
+    # Judging only for competitions: teams, or any judging fact. A wedding or seminar has none.
+    judging = bool(ts) or any(k in S for k in ("judges_available", "max_teams_per_judge", "min_per_team"))
+    need = used = rounds = jmin = 0
     mpt = g("min_per_team")
-    if mpt is None:
-        mpt = cfg["min_per_team"]
-        notes.append(f"minutes per team not given: planner assumption {mpt}")
-    rounds = math.ceil(teams * jpt / used)
-    jmin = rounds * int(mpt)
+    if judging:
+        if not teams:
+            probs.append("provide: team size (judging needs teams)")
+        elif mx:
+            need = math.ceil(teams * jpt / int(mx))
+        else:
+            need = avail or 0
+            if need:
+                notes.append("no max teams per judge given: all available judges are used")
+        if teams and avail is None:
+            probs.append("provide: how many judges are available (plus fee, minutes per team, max teams per judge)")
+        elif teams and need > avail:
+            probs.append(f"needs {need - avail} more judge(s): {need} needed for {teams} teams at max {mx}/judge, "
+                         f"only {avail} available")
+        used = need or (1 if teams else 0)
+        if mpt is None:
+            mpt = cfg["min_per_team"]
+            notes.append(f"minutes per team not given: planner assumption {mpt}")
+        rounds = math.ceil(teams * jpt / used) if used else 0
+        jmin = rounds * int(mpt)
     staff = int(g("staff", 0))
     extra = sum(int(num(d.get("n"))) for d in of("extra_people"))
     hc = students + used + staff + extra
-    fig = dict(students=students, team_size=ts, teams=teams, judges_available=avail, judges_needed=need,
+    fig = dict(event=g("event_type") or "event", judging=judging, students=students, team_size=ts, teams=teams, judges_available=avail, judges_needed=need,
                judges_used=used, standby=max(0, (avail or 0) - used), judges_per_team=jpt,
                max_teams_per_judge=mx, min_per_team=mpt, rounds=rounds, judging_min=jmin, staff=staff,
                extra=extra, headcount=hc, duration_min=dur, budget=budget)
@@ -246,8 +257,13 @@ def build(st, cfg):
                  basis=f"{num(price):,.0f}/h × {dur / 60:g} h" if per_hour else "fixed")
         (rejected.append({**v, "why": why}) if why else valid.append(v))
     valid.sort(key=lambda v: (v["cost"], -v["seats"]))
-    if not valid:
-        probs.append(f"no venue fits {hc} people" + (f" with {', '.join(req)}" if req else ""))
+    if not of("venue"):
+        probs.append(f"provide: venue options with seats and price, at least {hc} seats"
+                     + (f" with {', '.join(req)}" if req else "") + " (e.g. 'Marquee X seats 300 for Rs 2 lakh')")
+        valid = [None]
+    elif not valid:
+        probs.append(f"no venue fits {hc} people" + (f" with {', '.join(req)}" if req else "")
+                     + ": provide a bigger venue option or reduce the guest list")
 
     # Food: tiers are alternatives; boxes always = headcount
     gfee = sum(num(d.get("fee")) for d in of("food") if d.get("price_per_head") is None)
@@ -262,7 +278,8 @@ def build(st, cfg):
     freq = {norm(d.get("name", "")) for d in of("food_require")}
     fopts = [f for f in fo_all if norm(f["name"]) in freq] or fo_all
     if not fopts:
-        probs.append("no food option with a price per head")
+        probs.append("provide: catering price per person (e.g. 'menu Rs 2,500 per head')")
+        fopts = [None]
     diet = [dict(type=d.get("type"), n=d.get("n"), pct=d.get("pct"), src=srcs(d)) for d in of("diet")]
 
     # Budget optimiser: venue x food x optional subsets; prefer better food, more extras, lower total
@@ -280,16 +297,18 @@ def build(st, cfg):
     def lines(v, fo, sub):
         L = [dict(line=f"{str(c.get('status', 'required')).title()}: {c.get('name')}", basis=amount(c)[1],
                   amount=amount(c)[0], kind="required", src=srcs(c)) for c in reqc]
-        L.append(dict(line=f"Venue: {v['name']}", basis=v["basis"], amount=v["cost"], kind="required", src=v["src"]))
+        if v:
+            L.append(dict(line=f"Venue: {v['name']}", basis=v["basis"], amount=v["cost"], kind="required", src=v["src"]))
         if hon:
             L.append(dict(line="Judges' honorarium", basis=f"{used} × {hon:,}", amount=used * hon,
                           kind="required", src=src("honorarium")))
-        L.append(dict(line=f"Food: {fo['name']}", basis=f"{fo['qty']} × {fo['pph']:,}" +
-                      (f" + fee {fo['fee']:,}" if fo["fee"] else ""), amount=fo["cost"], kind="required", src=fo["src"]))
+        if fo:
+            L.append(dict(line=f"Food: {fo['name']}", basis=f"{fo['qty']} × {fo['pph']:,}" +
+                          (f" + fee {fo['fee']:,}" if fo["fee"] else ""), amount=fo["cost"], kind="required", src=fo["src"]))
         base = sum(x["amount"] for x in L)
         for c in pctc:
             tgt = str(c.get("basis")).split(":")[-1] if ":" in str(c.get("basis")) else "all"
-            t = {"venue": v["cost"], "food": fo["cost"], "judges": used * hon}.get(tgt, base)
+            t = {"venue": v["cost"] if v else 0, "food": fo["cost"] if fo else 0, "judges": used * hon}.get(tgt, base)
             L.append(dict(line=str(c.get("name")), basis=f"{num(c.get('amount')):g}% of {tgt}",
                           amount=round(t * num(c.get("amount")) / 100), kind="required", src=srcs(c)))
         L += [dict(line=f"{c.get('name')} (optional)", basis=amount(c)[1], amount=amount(c)[0],
@@ -305,7 +324,7 @@ def build(st, cfg):
                     tot = sum(x["amount"] for x in L)
                     if r == 0 and (cheapest is None or tot < cheapest[0]):
                         cheapest = (tot, v, fo, (), L)
-                    key = (fo["pph"], r, -tot)
+                    key = (fo["pph"] if fo else 0, r, -tot)
                     if tot + reserve <= budget and (best is None or key > best[0]):
                         best = (key, v, fo, sub, L)
     if best:
@@ -320,7 +339,7 @@ def build(st, cfg):
         sub, L = (), []
     total = sum(x["amount"] for x in L)
     if fo:
-        top = max(fopts, key=lambda f: f["pph"])
+        top = max((f for f in fopts if f), key=lambda f: f["pph"])
         if fo["pph"] < top["pph"]:
             levers.append(f"cheaper food tier: {fo['name']} (Rs {fo['pph']:,}) because {top['name']} does not fit")
         for c in opt:
@@ -330,14 +349,15 @@ def build(st, cfg):
                 notes.append(f"optional {c.get('name')} included; headroom Rs {budget - reserve - total:,}")
 
     jname = f"Judging ({rounds} rounds × {mpt} min, {used} judges in parallel)"
-    sched, n2, p2 = schedule(cfg, dur, jname, jmin, of, g)
+    sched, n2, p2 = schedule(cfg, dur, jname, jmin, of, g, "Build (hacking)" if teams else "Main programme")
     notes += n2
     probs += p2
     grid = [[] for _ in range(used)]
-    for i in range(teams * jpt):
+    for i in range(teams * jpt if used else 0):
         grid[i % used].append(f"T{i // jpt + 1}")
     req_costs = sum(x["amount"] for x in L if x["kind"] == "required")
-    p = dict(feasible=not probs, problems=probs, figures=fig, levers=levers, notes=notes,
+    needs = [x[len("provide: "):] for x in probs if x.startswith("provide: ")]
+    p = dict(feasible=not probs, problems=probs, needs=needs, figures=fig, levers=levers, notes=notes,
              venue=dict(v or {}, required=req, rejected=rejected, pct=pct),
              food=dict(fo or {}, options=fo_all, diet=diet),
              judging=dict(judges=used, grid=grid, min_per_team=mpt, rounds=rounds),

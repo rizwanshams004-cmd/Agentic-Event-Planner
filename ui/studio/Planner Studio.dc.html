@@ -242,8 +242,12 @@ class Component extends DCLogic {
   componentDidMount(){this.load();fetch('/api/presets').then(r=>r.json()).then(p=>this.setState({presets:p})).catch(()=>{});}
   load(){fetch('/api/state',{cache:'no-store'}).then(r=>r.json()).then(d=>this.setState({d,view:d.runs?d.runs.length:0,err:''})).catch(e=>this.setState({err:'Cannot reach the planner server: '+e}));}
   mkToast(nd,n0){const nm=(nd.msgs||[]).slice(n0);if(!nm.length)return{icon:'⚠️',bg:'#B45309',title:'No new message read',text:'The model call failed or found nothing; the text stays in the file. Wait 10 s and retry.'};
-    return nm.map(m=>{const g=m.guardian||{},dd=g.decision||m.statusText;const bad=/REJECTED|QUARANTINED/.test(dd),warn=/FLAGGED|INFEASIBLE/.test(dd);
-      return{icon:dd==='QUARANTINED'?'🛡️':bad?'⛔':warn?'⚠️':'✅',bg:bad?'#B91C1C':warn?'#B45309':'#15803D',title:`Message ${m.i} · ${m.frm}: ${dd}`,text:(g.reason||m.reason)+` · Total Rs ${nd.plan?nd.plan.total:'-'} · ${(nd.checks||[]).filter(c=>c.ok).length}/6 checks`};})[nm.length-1];}
+    const m=nm[nm.length-1],g=m.guardian||{},dd=g.decision||m.statusText;
+    if(dd==='QUARANTINED')return{icon:'🛡️',bg:'#B91C1C',title:'Message blocked',text:'It tries to change the planner\'s instructions or asks for secrets, so it was ignored. Your plan is unchanged.'};
+    if(dd==='REJECTED')return{icon:'⛔',bg:'#B91C1C',title:'Change not applied',text:(g.reason||m.reason)};
+    if(nd.needs&&nd.needs.length)return{icon:'📝',bg:'#B45309',title:'Plan started — a few details needed',text:'Please provide: '+nd.needs.join('; ')+'.'};
+    if(!nd.complete)return{icon:'⚠️',bg:'#B45309',title:'Plan needs attention',text:nd.infeasible||'See the plan for details.'};
+    return{icon:'✅',bg:'#15803D',title:nm.length>1||nd.runs.length===1?'Your plan is ready':'Plan updated',text:`Total Rs ${nd.plan.total} of Rs ${nd.plan.budget} · Rs ${nd.plan.remaining} left · ${(nd.checks||[]).filter(c=>c.ok).length}/6 checks passed`};}
   download(name,text){const b=new Blob([text],{type:'text/plain'});const u=URL.createObjectURL(b);const el=document.createElement('a');el.href=u;el.download=name;el.click();setTimeout(()=>URL.revokeObjectURL(u),500);}
   renderVals(){
     const s=this.state,d=s.d||{runs:[],msgs:[],checks:[],file:'pack.txt',calls:0,tokens:0};
@@ -294,7 +298,7 @@ class Component extends DCLogic {
       dlPlan:()=>this.download('plan.md',d.planMd||''),dlTrace:()=>this.download('trace.txt',d.traceTxt||''),
       rail,runs:runList,goAdd:()=>this.setState({insp:'add'}),sideTabs,sideRows,
       q:s.q,onQ:e=>this.setState({q:e.target.value}),groups,
-      infeasible:inf,infeasibleText:`Infeasible: ${d.infeasible||''}. Last valid plan kept.`,
+      infeasible:inf,infeasibleText:(d.needs&&d.needs.length)?`Details needed: ${d.needs.join('; ')}.`:`Infeasible: ${d.infeasible||''}. Last valid plan kept.`,
       runBadge:s.err?s.err:s.running?`Running update · reading call #${(d.calls||0)+1}…`:maxRun?`Run ${view} of ${maxRun} · ${R.calls.length} call(s) · ${N(R.tokens)} tokens · session ${N(d.tokens)}`:'No runs yet: click Add message → Run update',
       zoom:s.zoom,zoomIn:()=>this.setState(st=>({zoom:Math.min(1.5,+(st.zoom+0.1).toFixed(2))})),zoomOut:()=>this.setState(st=>({zoom:Math.max(0.6,+(st.zoom-0.1).toFixed(2))})),zoomFit:()=>this.setState({zoom:1}),
       edges:EDGES.map(x=>({d:x})),ports:PORTS.map(([x,y])=>({x,y})),nodes,

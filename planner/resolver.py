@@ -1,7 +1,7 @@
 """Resolver: decides each fact's status with ordered rules (pure code, 0 tokens)."""
 import re
 
-EVENT = "students team_size duration_min start_time end_time staff extra_people block window".split()
+EVENT = "event_type students team_size duration_min start_time end_time staff extra_people block window".split()
 JUDGING = "judges_available min_per_team max_teams_per_judge judges_per_team".split()
 # Authority matrix: key -> roles that own it (a design rule, not pack data). None = anyone.
 OWN = {**{k: {"authority"} for k in EVENT}, **{k: {"judging", "authority"} for k in JUDGING},
@@ -58,13 +58,15 @@ def _set(f, status, reason, tr):
 
 def resolve(st, f, tr):
     k, v, role = f["k"], f["v"], f["role"]
+    # The person using the planner UI is the organiser: full authority, and may enter vendor quotes.
+    eff = {"authority", "venue", "caterer", "finance", "judging"} if role == "organizer" else {role}
     who = f"{f['from']} ({role})"
     if k in ("claim", "teams"):           # rule 2 is checked after planning
         f["status"] = "pending"
         return
     if k == "cost":
         status = v.get("status", "required")
-        if status == "optional" and role not in ("finance", "authority"):   # rule 8
+        if status == "optional" and not eff & {"finance", "authority"}:   # rule 8
             return _set(f, "request", f"optional request from {who}; included only if it fits", tr)
         owners = None if status == "optional" else {"finance", "authority"} if status == "committed" \
             else {"finance", "authority", "venue", "caterer", "vendor"}
@@ -72,7 +74,7 @@ def resolve(st, f, tr):
         owners = OWN.get(k)
     if k == "judges_change" and role == "judge" and v.get("delta", 0) not in (-1, -1.0):
         return _set(f, "rejected", f"a judge may only report their own withdrawal (-1), not {v.get('delta')}", tr)
-    if owners is not None and role not in owners:                            # rule 3 / 4
+    if owners is not None and not eff & owners:                              # rule 3 / 4
         cur = current(st, f["slot"])
         rule = f"; standing rule {k}={fmt(cur['v'])} (msg {cur['msg']}) stays" if cur else ""
         own = "/".join(sorted(owners))

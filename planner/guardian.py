@@ -112,6 +112,9 @@ def decide(st, M, facts, infeasible, committed):
         return "FLAGGED", "low", "a number the model extracted is not in the message (hallucination dropped)"
     if M.get("status") == "no impact":
         return "ACCEPTED", "none", "no impact on the plan: " + (M.get("reason") or "no plan facts")[:160]
+    if any(s == "applied" for s in S) and infeasible and all(x.startswith("provide: ") for x in st.get("infeasible") or []):
+        return "ACCEPTED", "none", "applied; plan started, details still needed: " + "; ".join(
+            x[len("provide: "):] for x in st["infeasible"])
     if any(s == "applied" for s in S) and infeasible:
         return "ACCEPTED (INFEASIBLE)", "none", f"legitimate change applied, but no valid plan exists: {infeasible}; last valid plan kept"
     if any(s in ("applied", "request") for s in S):
