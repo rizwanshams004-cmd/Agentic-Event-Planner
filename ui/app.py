@@ -1,0 +1,149 @@
+"""Streamlit UI: reads state/*.json only; 'Add message' appends to the same file and calls the same run()."""
+import json
+import sys
+from pathlib import Path
+import streamlit as st
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from planner import engine, report  # noqa: E402
+
+st.set_page_config(page_title="Hackathon Planner", layout="wide")
+st.markdown("""<style>
+.chip{padding:2px 10px;border-radius:12px;font-size:.8rem;font-weight:600;color:#fff}
+.applied{background:#1a7f37}.rejected{background:#cf222e}.superseded,.noimpact{background:#6e7781}
+.request{background:#0969da}.badge{display:inline-block;margin:2px 4px;padding:4px 10px;border-radius:6px;
+font-weight:600;color:#fff}.ok{background:#1a7f37}.bad{background:#cf222e}
+</style>""", unsafe_allow_html=True)
+
+files = sorted((ROOT / "state").glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)
+if not files:
+    st.info("No runs yet. Run:  python run.py <messages.txt>")
+    st.stop()
+states = [json.loads(f.read_text(encoding="utf-8")) for f in files]
+idx = st.sidebar.selectbox("Message file", range(len(states)), format_func=lambda i: Path(states[i]["path"]).name)
+S = states[idx]
+
+with st.sidebar:
+    st.subheader("Add message")
+    new = st.text_area("Paste the new message exactly as given", height=150)
+    if st.button("Add & re-plan", type="primary", disabled=not new.strip()):
+        with open(S["path"], "a", encoding="utf-8") as fh:
+            fh.write(("\n\n" if not S["text"].endswith("\n\n") else "") + new.strip() + "\n")
+        with st.spinner("Running the same pipeline as the CLI..."):
+            engine.run(S["path"], echo=False)
+        st.rerun()
+    out = ROOT / "out"
+    for fn in ("plan.md", "trace.txt"):
+        if (out / fn).exists():
+            st.download_button(f"Download {fn}", (out / fn).read_bytes(), file_name=fn)
+
+p = S.get("plan")
+if S.get("infeasible"):
+    st.error("INFEASIBLE after the latest message: " + "; ".join(S["infeasible"]) +
+             (" — showing the last valid plan." if p else ""))
+if not p:
+    st.stop()
+F, B, V, FD, SC = p["figures"], p["budget"], p["venue"], p["food"], p["schedule"]
+cols = st.columns(6)
+for c, (lab, val) in zip(cols, [("Headcount", F["headcount"]), ("Teams", F["teams"]),
+                                ("Judges", f"{F['judges_used']}/{F['judges_available']}"),
+                                ("Total (Rs)", f"{B['total']:,} / {B['budget']:,}"),
+                                ("Run", len(S["runs"])), ("Session tokens", f"{S['tokens']:,}")]):
+    c.metric(lab, val)
+st.markdown("".join(f"<span class='badge {'ok' if c['ok'] else 'bad'}' title='{c['detail']}'>"
+                    f"{'✔' if c['ok'] else '✘'} {c['name']}</span>" for c in S["checks"] or []), unsafe_allow_html=True)
+
+t1, t2, t3, t4, t5 = st.tabs(["Plan", "Messages", "Trace", "Changes", "Tokens"])
+with t1:
+    a, b = st.columns(2)
+    with a:
+        st.subheader(f"🏛 Venue: {V.get('name')}")
+        st.write(f"{V.get('seats')} seats · Rs {V.get('cost', 0):,} ({V.get('basis')}) · from {V.get('src')}")
+        st.caption(f"Cheapest option that fits {F['headcount']} people" +
+                   (f" with {', '.join(V['required'])}" if V["required"] else ""))
+        for r in V["rejected"]:
+            st.write(f"✘ {r['name']} — {r['why']}")
+        st.subheader(f"🍱 Food: {FD.get('name')}")
+        st.write(f"{FD.get('boxes')} boxes (= headcount) × Rs {FD.get('pph', 0):,}" +
+                 (f" + fee {FD['fee']:,}" if FD.get("fee") else "") + f" = **Rs {FD.get('cost', 0):,}** · {FD.get('src')}")
+        for d in FD["diet"]:
+            st.write(f"Diet: {d['type']} {d.get('n') or ''}{'%' if d.get('pct') else ''} ({d['src']})")
+        st.subheader("⚖ Judging")
+        st.write(f"{F['judges_used']} judges used, {F['standby']} standby · {F['rounds']} rounds × "
+                 f"{F['min_per_team']} min = {F['judging_min']} min")
+        st.dataframe([{"Judge": f"J{i + 1}", **{f"Round {k + 1}": t for k, t in enumerate(g)}}
+                      for i, g in enumerate(p["judging"]["grid"])], hide_index=True, height=250)
+    with b:
+        st.subheader("🕒 Schedule" + (" (10:00 start is an assumption)" if SC["assumed"] else ""))
+        st.dataframe([{"Time": x["time"], "Block": x["name"], "Min": x["min"], "Source": x["src"]}
+                      for x in SC["blocks"]], hide_index=True)
+        st.progress(1.0, text=" | ".join(f"{x['name'].split(' (')[0]} {x['min']}" for x in SC["blocks"]))
+        st.subheader("💰 Budget")
+        st.dataframe([{"Line": l["line"], "Basis": l["basis"], "Rs": f"{l['amount']:,}", "From": l["src"]}
+                      for l in B["lines"]], hide_index=True)
+        st.write(f"**Total Rs {B['total']:,}** · reserve Rs {B['reserve']:,} · remaining Rs {B['remaining']:,} "
+                 f"of {B['budget']:,}")
+        st.progress(min(1.0, (B["total"] + B["reserve"]) / max(1, B["budget"])), text="spent vs budget")
+    if p["levers"] or p["notes"]:
+        st.subheader("Decisions")
+        for x in p["levers"] + p["notes"]:
+            st.write("• " + x)
+
+with t2:
+    for m in reversed(S["msgs"]):
+        cls = m["status"].split(" ")[0].replace("no", "noimpact") if m["status"] != "no impact" else "noimpact"
+        with st.expander(f"Msg {m['n']} · {m['frm']} ({m['role']}) · {m['date'] or 'undated'} — {m['status'].upper()}",
+                         expanded=m["status"] == "rejected"):
+            st.markdown(f"<span class='chip {cls}'>{m['status']}</span>", unsafe_allow_html=True)
+            st.write(m["reason"])
+            facts = [f for f in S["facts"] if f["msg"] == m["n"]]
+            if facts:
+                st.dataframe([{"key": f["k"], "value": json.dumps(f["v"], ensure_ascii=False), "quote": f["q"],
+                               "status": f["status"], "reason": f["reason"]} for f in facts], hide_index=True)
+
+with t3:
+    runs = sorted({e["run"] for e in S["trace"]})
+    r = st.selectbox("Run", ["all"] + runs)
+    areas = sorted({e["area"] for e in S["trace"] if e["t"] == "call"})
+    af = st.multiselect("Area", areas, default=areas)
+    for e in S["trace"]:
+        if r != "all" and e["run"] != r:
+            continue
+        if e["t"] == "call":
+            if e["area"] not in af:
+                continue
+            u = e.get("usage")
+            tok = f"prompt {u['prompt']} · completion {u['completion']} · total {u['total']}" if u else "not reported"
+            with st.expander(f"#{e['n']} · {e['model']} · area={e['area']} · {tok}" + (" · FAILED" if e.get("error") else "")):
+                st.caption("INPUT")
+                st.code(e["input"], language=None)
+                st.caption("OUTPUT")
+                st.code(e.get("output") or e.get("error"), language="json")
+        elif e["t"] == "code":
+            st.markdown(f"<span style='color:#6e7781;font-family:monospace;font-size:.85rem'>[code] {e['text']}</span>",
+                        unsafe_allow_html=True)
+        else:
+            st.markdown(f"**{e['text']}**")
+
+with t4:
+    for run in reversed(S["runs"]):
+        st.subheader(f"Run {run['run']} · {run['mode']} · {run.get('calls', 0)} model call(s) · {run.get('tokens', 0):,} tokens")
+        if run.get("failed"):
+            st.warning("Read failed; text not consumed.")
+            continue
+        st.write(f"Areas recomputed (dependency map): **{', '.join(run['areas']) or 'none'}** · "
+                 f"actually changed: **{', '.join(run['changed']) or 'none'}**")
+        if run["before"]:
+            st.dataframe([{"figure": k, "before": run["before"].get(k), "after": run["after"].get(k)}
+                          for k in run["after"]], hide_index=True)
+        for f in run["facts"]:
+            st.write("• " + f)
+
+with t5:
+    rows = report.token_rows(S)
+    st.subheader("Model calls and tokens (as reported by the API)")
+    st.table([{"#": r[0], "Run": r[1], "Model": r[2], "Area": r[3], "Prompt": r[4], "Completion": r[5],
+               "Total": r[6], "Status": r[7]} for r in rows] +
+             [{"#": "", "Run": "", "Model": "", "Area": "TOTAL", "Prompt": "", "Completion": "",
+               "Total": f"{S['tokens']:,}", "Status": f"{S['calls']} calls"}])
