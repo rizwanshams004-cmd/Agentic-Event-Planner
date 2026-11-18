@@ -10,10 +10,15 @@ from planner import engine, report  # noqa: E402
 
 st.set_page_config(page_title="Hackathon Planner", layout="wide")
 st.markdown("""<style>
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+html,body,[class*="css"],.stMarkdown,.stMetric{font-family:'Hanken Grotesk',system-ui,sans-serif}
+code,pre,.stCode{font-family:'JetBrains Mono',ui-monospace,monospace!important}
+[data-testid="stMetric"]{background:#fff;border:1px solid #E3E1DA;border-radius:10px;padding:10px 14px}
+[data-testid="stMetricLabel"]{color:#565A63}
 .chip{padding:2px 10px;border-radius:12px;font-size:.8rem;font-weight:600;color:#fff}
-.applied{background:#1a7f37}.rejected{background:#cf222e}.superseded,.noimpact{background:#6e7781}
-.request{background:#0969da}.badge{display:inline-block;margin:2px 4px;padding:4px 10px;border-radius:6px;
-font-weight:600;color:#fff}.ok{background:#1a7f37}.bad{background:#cf222e}
+.applied{background:#1E7A4C}.rejected{background:#B42318}.superseded,.noimpact{background:#7C7F86}
+.request{background:#8A5300}.badge{display:inline-block;margin:2px 4px;padding:4px 10px;border-radius:6px;
+font-weight:600;color:#fff;font-size:.85rem}.ok{background:#1E7A4C}.bad{background:#B42318}
 </style>""", unsafe_allow_html=True)
 
 files = sorted((ROOT / "state").glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)
