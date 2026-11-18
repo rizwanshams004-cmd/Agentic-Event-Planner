@@ -63,6 +63,9 @@ def numbers(text):
     return out
 
 
+DERIVED_WORDS = r"box|headcount|people|meal|plate|order|quantity|qty|units|count|judges_needed|total|rounds"
+
+
 def tonum(x):
     if isinstance(x, bool) or x is None:
         return None
@@ -96,6 +99,8 @@ def clean(f):
                 if n is None:
                     return None, f"{k}.{fld}: {v[fld]!r} is not a number"
                 v[fld] = n
+    elif re.search(DERIVED_WORDS, str(k), re.I) and tonum(v) is not None:
+        return dict(k="claim", v={"key": str(k), "value": tonum(v)}, q=str(f.get("q", ""))[:80], req=False), None
     else:
         return None, f"unknown key {k!r} (not in vocabulary)"
     return dict(k=k, v=v, q=str(f.get("q", ""))[:80], req=bool(f.get("req"))), None

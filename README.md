@@ -9,7 +9,8 @@ pip install -r requirements.txt
 set GROQ_API_KEY=...        # or GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY, or a .env file
 python run.py pack.txt      # full run (1 reading call)
 # paste the next message at the end of pack.txt, then the SAME command -> update run
-streamlit run ui/app.py     # Plan · Messages · Trace · Changes · Tokens
+python ui/studio.py pack.txt   # approved UI: Planner Studio -> http://localhost:8600
+streamlit run ui/app.py        # backup UI: Plan · Messages · Trace · Changes · Tokens
 python -m pytest -q tests   # offline regression: sample pack + 20 change / wrong-message cases
 ```
 Provider order: `PLANNER_PROVIDERS=groq,gemini,openai,anthropic,ollama` (default; only those with keys are used,
@@ -42,3 +43,8 @@ offered to it), fallback `allam-2-7b`. Free tier = 8,000 tokens/min, so the clie
 ## Model-call prediction rule
 Every run = 1 call tagged `reading`. An extra area-tagged call (`venue`, `food`, ...) happens only if a message
 contains a constraint the vocabulary cannot express. A repair call (`reading`) happens only on broken JSON.
+
+## UI
+`ui/studio/Planner Studio.dc.html` is the approved Planner Studio design, wired to live data by `ui/studio.py`
+(reads the same `state/` the CLI writes; *Add message* appends to the same file and calls the same `engine.run()`).
+Test steps and expected results: [TEST_DATA.md](TEST_DATA.md).
