@@ -6,7 +6,7 @@ import streamlit as st
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from planner import engine, report  # noqa: E402
+from planner import engine, report, guardian  # noqa: E402
 
 st.set_page_config(page_title="Hackathon Planner", layout="wide")
 st.markdown("""<style>
@@ -36,12 +36,20 @@ with st.sidebar:
         with open(S["path"], "a", encoding="utf-8") as fh:
             fh.write(("\n\n" if not S["text"].endswith("\n\n") else "") + new.strip() + "\n")
         with st.spinner("Running the same pipeline as the CLI..."):
-            engine.run(S["path"], echo=False)
+            n0 = len(S["msgs"])
+            ns = engine.run(S["path"], echo=False)
+        st.session_state["last"] = [m.get("guardian", {}) | {"n": m["n"], "frm": m["frm"]} for m in ns["msgs"][n0:]]             or [{"decision": "READ FAILED", "reason": "model call failed; message kept in the file, rerun to retry"}]
         st.rerun()
     out = ROOT / "out"
     for fn in ("plan.md", "trace.txt"):
         if (out / fn).exists():
             st.download_button(f"Download {fn}", (out / fn).read_bytes(), file_name=fn)
+
+for g in st.session_state.pop("last", []):
+    d, msg = g.get("decision", ""), f"Msg {g.get('n', '')} · {g.get('frm', '')}: {g.get('decision', '')} — {g.get('reason', '')}"
+    icon = "✅" if d == "ACCEPTED" else "🛡️" if d == "QUARANTINED" else "⛔" if d == "REJECTED" else "⚠️"
+    st.toast(msg, icon=icon)
+    (st.success if d == "ACCEPTED" else st.error if d in ("REJECTED", "QUARANTINED", "READ FAILED") else st.warning)(f"{icon} {msg}")
 
 p = S.get("plan")
 if S.get("infeasible"):
@@ -59,7 +67,7 @@ for c, (lab, val) in zip(cols, [("Headcount", F["headcount"]), ("Teams", F["team
 st.markdown("".join(f"<span class='badge {'ok' if c['ok'] else 'bad'}' title='{c['detail']}'>"
                     f"{'✔' if c['ok'] else '✘'} {c['name']}</span>" for c in S["checks"] or []), unsafe_allow_html=True)
 
-t1, t2, t3, t4, t5 = st.tabs(["Plan", "Messages", "Trace", "Changes", "Tokens"])
+t1, t2, t3, t4, t5, t6 = st.tabs(["Plan", "Messages", "Trace", "Changes", "Tokens", "🛡️ MTM Guardian"])
 with t1:
     a, b = st.columns(2)
     with a:
@@ -152,3 +160,45 @@ with t5:
                                           "Status"), r)} for r in rows] +
              [{"#": "", "Run": "", "Model": "", "Area": "TOTAL", "Prompt": "", "Completion": "",
                "Total": f"{S['tokens']:,}", "Status": f"{S['calls']} calls"}])
+
+with t6:
+    A = S.get("audit", [])
+    st.caption("Deterministic Python layer, 0 model calls: prompt-injection scan → authority matrix → six checks "
+               "(commit only if valid) → SHA-256 hash-chained audit. Sender names are claimed identities, not verified.")
+    dec = [a["decision"] for a in A]
+    c = st.columns(6)
+    for col, (lab, val) in zip(c, [("Messages processed", len(A)), ("Accepted", sum(d.startswith("ACCEPTED") for d in dec)),
+                                   ("Rejected", dec.count("REJECTED")), ("Flagged", dec.count("FLAGGED")),
+                                   ("Injection attempts", dec.count("QUARANTINED")),
+                                   ("Audit chain", "✔ intact" if guardian.verify(A)["ok"] else "✘ BROKEN")]):
+        col.metric(lab, val)
+    if st.button("🔍 Verify Audit Integrity", type="primary"):
+        fresh = json.loads(files[idx].read_text(encoding="utf-8")).get("audit", [])   # re-read the stored chain
+        v = guardian.verify(fresh)
+        if v["ok"]:
+            st.success(f"✅ Audit chain verified: {v['at']} entries, every SHA-256 link matches. Head {str(v['head'])[:24]}…")
+            st.balloons()
+        else:
+            st.error(f"⛔ Audit chain BROKEN at entry {v['at']}: {v['problem']}")
+    risk_icon = {"high": "🔴 high", "medium": "🟠 medium", "low": "🟡 low", "none": "🟢 none"}
+    st.subheader("Security decisions")
+    st.dataframe([{"Msg": a["msg"], "Sender (claimed)": a["sender"]["name"], "Role": a["sender"]["role"],
+                   "Risk": risk_icon.get(a["risk"], a["risk"]), "Decision": a["decision"], "Reason": a["reason"],
+                   "Areas": ", ".join(a["areas"]) or "-", "Model calls": ", ".join(f"#{n}" for n in a["model_calls"])}
+                  for a in reversed(A)], hide_index=True)
+    st.subheader("Security event details")
+    if A:
+        pick = st.selectbox("Message", [a["msg"] for a in reversed(A)], format_func=lambda n: f"Msg {n} · " + next(
+            a["sender"]["name"] + " · " + a["decision"] for a in A if a["msg"] == n))
+        a = next(x for x in A if x["msg"] == pick)
+        (st.success if a["decision"] == "ACCEPTED" else st.error if a["decision"] in ("REJECTED", "QUARANTINED")
+         else st.warning)(f"**{a['decision']}** (risk {a['risk']}): {a['reason']}")
+        l, r = st.columns(2)
+        l.write(f"**Sender:** {a['sender']['name']} · role `{a['sender']['role']}` · {a['sender']['identity']}")
+        l.write(f"**Injection patterns:** {', '.join(a['injection']) or 'none'}")
+        l.write(f"**Run:** {a['run']} · **time:** {a['ts']} · **model calls:** {', '.join(f'#{n}' for n in a['model_calls']) or 'none'}")
+        l.code(a["text"] or "(raw text not separable from the batch; see trace)", language=None)
+        r.write("**Extracted facts**")
+        r.dataframe([{"key": f["k"], "value": json.dumps(f["v"], ensure_ascii=False), "status": f["status"]}
+                     for f in a["facts"]], hide_index=True)
+        r.caption(f"audit #{a['seq']} · prev {a['prev'][:16]}… · hash {a['hash'][:16]}…")

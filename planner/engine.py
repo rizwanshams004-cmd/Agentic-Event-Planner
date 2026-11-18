@@ -4,7 +4,7 @@ import json
 import math
 from pathlib import Path
 import yaml
-from . import reader, resolver, plan as planner, checks, report, state
+from . import reader, resolver, plan as planner, checks, report, state, guardian
 from .llm import Budget, LLMError
 from .trace import Trace
 
@@ -106,7 +106,7 @@ def msg_status(st):
         fs = [f for f in st["facts"] if f["msg"] == M["n"]]
         S = [f["status"] for f in fs]
         live = [f for f in fs if f["status"] not in ("dropped",)]
-        if "rejected" in S:
+        if "rejected" in S or M.get("quarantine"):
             s = "rejected"
         elif not live or all(f["status"] == "no_impact" or f.get("impact") is False for f in live):
             s = "no impact"
@@ -127,7 +127,8 @@ def apply(st, msgs, chunk, tr, C, budget=None, mode="full"):
     nums = reader.numbers(chunk)
     prev = copy.deepcopy(st.get("plan"))
     first = len(st["msgs"]) + 1
-    touched, run_facts = [], []
+    touched, run_facts, run_msgs = [], [], []
+    screened = guardian.screen(chunk, msgs, tr)          # Guardian A: untrusted text scanned before any fact counts
     for m in msgs:
         n = len(st["msgs"]) + 1
         date = m.get("date")
@@ -135,7 +136,9 @@ def apply(st, msgs, chunk, tr, C, budget=None, mode="full"):
             st["maxdate"] = max(st["maxdate"], date)
         M = dict(n=n, frm=m.get("frm", "?"), role=m.get("role", "unknown"), date=date, run=tr.run,
                  note=m.get("note", ""), status="", reason="")
+        M["quarantine"], M["role_override"] = m.get("quarantine"), m.get("role_override")
         st["msgs"].append(M)
+        run_msgs.append(M)
         for d in m.get("dropped", []):
             tr.code(f"schema check dropped msg {n} fact {d['raw']}: {d['err']}")
         facts = list(m.get("facts", []))
@@ -160,6 +163,11 @@ def apply(st, msgs, chunk, tr, C, budget=None, mode="full"):
                 r["status"], r["reason"] = "dropped", f"ungrounded: extracted {bad:g} but the message has no such number; ignored"
                 tr.code(f"grounding  {resolver.desc(r)}  DROPPED ({r['reason']})")
             recs.append(r)
+        if M["quarantine"]:
+            for r in recs:
+                if not r["status"]:
+                    r["status"], r["reason"] = "rejected", f"guardian quarantine: {M['quarantine']} in this message"
+                    tr.code(f"resolver  {resolver.desc(r)}  REJECTED ({r['reason']})")
         V = {r["k"]: r["v"] for r in recs if not r["status"]}
         if all(isinstance(V.get(k), (int, float)) for k in ("students", "team_size", "teams")):   # rule 5
             c = math.ceil(V["students"] / V["team_size"])
@@ -221,6 +229,8 @@ def apply(st, msgs, chunk, tr, C, budget=None, mode="full"):
         tr.code(f"dependency map: {sorted(set(touched)) or 'no applied facts'} -> recompute "
                 f"{', '.join(areas) or 'nothing'}; unchanged: {', '.join(a for a in planner.AREAS if a not in changed) or 'none'}")
     msg_status(st)
+    calls = [e["n"] for e in st["trace"] if e["t"] == "call" and e["run"] == tr.run]
+    guardian.audit_run(st, tr, run_msgs, screened, calls, areas)
     st["runs"].append(dict(run=tr.run, mode=mode, msgs=list(range(first, len(st["msgs"]) + 1)), calls=tr.calls,
                            tokens=tr.tokens, areas=areas, changed=changed, before=headline(prev),
                            after=headline(st["plan"]), infeasible=st["infeasible"],

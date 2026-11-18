@@ -29,6 +29,10 @@ class Trace:
         self.ev(dict(t="head", text=f"=== RUN {self.run} · {mode} · {info} · {datetime.now():%d %b %H:%M:%S} ==="))
 
     def ev(self, e):
+        from .guardian import redact                       # Guardian E: no secrets in traces
+        for k in ("input", "output", "error", "text"):
+            if isinstance(e.get(k), str):
+                e[k] = redact(e[k])
         e["run"] = self.run
         self.st["trace"].append(e)
         if self.echo:

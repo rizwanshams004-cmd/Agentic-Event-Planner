@@ -178,7 +178,8 @@ def read(chunk, known, budget, tr):
         role = role_of(frm, m.get("role"))
         if role != m.get("role"):
             tr.code(f"role  sender '{frm}': model said {m.get('role')!r}, sender-name rule says {role!r} -> {role}")
-        msgs.append(dict(frm=frm, role=role,
+        msgs.append(dict(role_override=f"model said {m.get('role')}, name rule says {role}" if role != m.get("role") else None,
+                         frm=frm, role=role,
                          date=date, facts=good, dropped=bad, other=m.get("other") or [], note=str(m.get("note") or "")))
     tr.code(f"reader: {len(msgs)} message(s), {sum(len(m['facts']) for m in msgs)} fact(s), "
             f"{sum(len(m['dropped']) for m in msgs)} dropped by schema check")

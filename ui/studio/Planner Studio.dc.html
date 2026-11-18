@@ -220,6 +220,12 @@
     </sc-if>
   </aside>
 </div>
+  <sc-if value="{{ toastShow }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ toastClose }}" style="position:fixed;right:24px;bottom:24px;z-index:50;max-width:460px;cursor:pointer;display:flex;gap:10px;align-items:flex-start;padding:14px 16px;border-radius:10px;background:{{ toastBg }};color:#FFFFFF;box-shadow:0 10px 30px rgba(0,0,0,0.25);font-size:13px;line-height:18px">
+      <span style="font-size:18px;line-height:18px">{{ toastIcon }}</span>
+      <span style="display:flex;flex-direction:column;gap:4px"><b style="font-size:14px">{{ toastTitle }}</b><span>{{ toastText }}</span><span style="opacity:.75;font-size:12px">click to close</span></span>
+    </div>
+  </sc-if>
 </div>
 </x-dc>
 <script type="text/x-dc" data-dc-script>
@@ -232,9 +238,12 @@ const PORTS=[[72,265],[130,190],[350,190],[150,520],[350,520],[430,160],[545,404
 const N=x=>x==null?'not reported':Number(x).toLocaleString('en-US');
 
 class Component extends DCLogic {
-  state={d:null,err:'',presets:[],view:0,sel:{t:'node',id:'reader'},insp:'inspect',side:'checks',q:'',closed:{},draft:'',running:false,zoom:1};
+  state={toast:null,d:null,err:'',presets:[],view:0,sel:{t:'node',id:'reader'},insp:'inspect',side:'checks',q:'',closed:{},draft:'',running:false,zoom:1};
   componentDidMount(){this.load();fetch('/api/presets').then(r=>r.json()).then(p=>this.setState({presets:p})).catch(()=>{});}
   load(){fetch('/api/state',{cache:'no-store'}).then(r=>r.json()).then(d=>this.setState({d,view:d.runs?d.runs.length:0,err:''})).catch(e=>this.setState({err:'Cannot reach the planner server: '+e}));}
+  mkToast(nd,n0){const nm=(nd.msgs||[]).slice(n0);if(!nm.length)return{icon:'⚠️',bg:'#B45309',title:'No new message read',text:'The model call failed or found nothing; the text stays in the file. Wait 10 s and retry.'};
+    return nm.map(m=>{const g=m.guardian||{},dd=g.decision||m.statusText;const bad=/REJECTED|QUARANTINED/.test(dd),warn=/FLAGGED|INFEASIBLE/.test(dd);
+      return{icon:dd==='QUARANTINED'?'🛡️':bad?'⛔':warn?'⚠️':'✅',bg:bad?'#B91C1C':warn?'#B45309':'#15803D',title:`Message ${m.i} · ${m.frm}: ${dd}`,text:(g.reason||m.reason)+` · Total Rs ${nd.plan?nd.plan.total:'-'} · ${(nd.checks||[]).filter(c=>c.ok).length}/6 checks`};})[nm.length-1];}
   download(name,text){const b=new Blob([text],{type:'text/plain'});const u=URL.createObjectURL(b);const el=document.createElement('a');el.href=u;el.download=name;el.click();setTimeout(()=>URL.revokeObjectURL(u),500);}
   renderVals(){
     const s=this.state,d=s.d||{runs:[],msgs:[],checks:[],file:'pack.txt',calls:0,tokens:0};
@@ -262,8 +271,8 @@ class Component extends DCLogic {
     const mono="ui-monospace,'SF Mono',Menlo,monospace",sans='Inter,ui-sans-serif,system-ui,sans-serif';
     const runTag=`Run ${R.r} · ${R.kind} · ${R.time}`;
     if(selMsg){const st=ST[selMsg.status]||ST.noimpact;selTitle=`Message ${selMsg.i}`;selIcon=I(selMsg.ch==='whatsapp'?'message-circle':'mail');selStatus=st[0];selStatusFg=st[1];
-      fields=[['Sender',selMsg.frm],['Role (code rule)',selMsg.role],['Date',selMsg.date],['Status',selMsg.statusText],['Arrived in',`Run ${selMsg.run}`]];
-      boxes=[{label:'Quoted evidence',text:selMsg.quotes,font:sans},{label:'Decision',text:selMsg.reason,font:sans},{label:'Extracted facts',text:selMsg.facts,font:mono}];}
+      fields=[['Guardian',(selMsg.guardian.decision||'-')+' · risk '+(selMsg.guardian.risk||'-')],['Sender (claimed)',selMsg.frm],['Role (code rule)',selMsg.role],['Date',selMsg.date],['Status',selMsg.statusText],['Arrived in',`Run ${selMsg.run}`]];
+      boxes=[{label:'Guardian reason',text:selMsg.guardian.reason||'-',font:sans},{label:'Quoted evidence',text:selMsg.quotes,font:sans},{label:'Decision',text:selMsg.reason,font:sans},{label:'Extracted facts',text:selMsg.facts,font:mono}];}
     else{const id=selNode;selIcon=I({reader:'sparkles',resolver:'scale',planner:'layout-list',checks:'list-checks'}[id]);selTitle=nodeDefs[id].title;const okN=nodeDefs[id].status;selStatus=okN?'Success':'Failed';selStatusFg=okN?C.green:C.red;
       if(id==='reader'){fields=[['Run',runTag],['Model (from API)',call.model],['Area tag',call.area],['Tokens (API)',`${N(call.prompt)} prompt · ${N(call.completion)} completion · ${N(call.total)} total`],['Calls this run',String(R.calls.length)],['Session',`${d.calls} calls · ${N(d.tokens)} tokens`]];
         boxes=R.calls.length?R.calls.flatMap(c=>[{label:`#${c.n} ${c.area} · input`,text:c.input,font:mono},{label:`#${c.n} ${c.area} · output${c.error?' (FAILED)':''} · ${N(c.total)} tokens`,text:c.error||c.output,font:mono}]):[{label:'Input',text:'No model call yet. Run: python run.py '+d.file,font:sans}];}
@@ -280,6 +289,7 @@ class Component extends DCLogic {
     const quick=(s.presets||[]).map(p=>({label:p.label,fg:'#27272A',onClick:()=>this.setState({draft:p.text})}));
     const can=!s.running&&(!!s.draft.trim()||!maxRun);
     return{
+      toastShow:!!s.toast,toastIcon:s.toast?s.toast.icon:'',toastBg:s.toast?s.toast.bg:'#15803D',toastTitle:s.toast?s.toast.title:'',toastText:s.toast?s.toast.text:'',toastClose:()=>this.setState({toast:null}),
       fileName:d.file,fileMeta:`${d.nmsgs||0} messages`,checksLabel:checks.length?`${pass}/6 checks`:'no plan yet',checksBg:pass===6&&!inf?'#DCFCE7':'#FEE2E2',checksFg:pass===6&&!inf?C.green:C.red,checksIcon:I(pass===6&&!inf?'circle-check':'circle-x'),
       dlPlan:()=>this.download('plan.md',d.planMd||''),dlTrace:()=>this.download('trace.txt',d.traceTxt||''),
       rail,runs:runList,goAdd:()=>this.setState({insp:'add'}),sideTabs,sideRows,
@@ -290,7 +300,7 @@ class Component extends DCLogic {
       edges:EDGES.map(x=>({d:x})),ports:PORTS.map(([x,y])=>({x,y})),nodes,
       inspTabs,isInspect:s.insp==='inspect',isAdd:s.insp==='add',selTitle,selIcon,selStatus,selStatusFg,fields,boxes,
       draft:s.draft,onDraft:e=>this.setState({draft:e.target.value}),quick,sendBg:can?'#2563EB':'#A1A1AA',sendLabel:s.running?'Running…':maxRun?'Run update':'Run full pack',
-      send:()=>{if(!can)return;this.setState({running:true});fetch('/api/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:s.draft.trim()})}).then(r=>r.json()).then(nd=>this.setState({d:nd,view:(nd.runs||[]).length,draft:'',running:false,insp:'inspect',sel:{t:'node',id:'resolver'}})).catch(e=>this.setState({running:false,err:'Update failed: '+e}));}
+      send:()=>{if(!can)return;this.setState({running:true});fetch('/api/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:s.draft.trim()})}).then(r=>r.json()).then(nd=>this.setState({toast:this.mkToast(nd,(d.msgs||[]).length),d:nd,view:(nd.runs||[]).length,draft:'',running:false,insp:'inspect',sel:{t:'node',id:'resolver'}})).catch(e=>this.setState({running:false,err:'Update failed: '+e}));}
     };
   }
 }

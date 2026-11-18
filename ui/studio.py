@@ -47,7 +47,8 @@ def view(st):
                          status=status_key(m, inf_runs), statusText=m["status"], reason=m["reason"],
                          ch="whatsapp" if "whatsapp" in m["frm"].lower() else "email",
                          quotes="\n".join(f"“{f['q']}”" for f in fs if f.get("q")) or m.get("note") or "(no quote)",
-                         facts="\n".join(f"{f['k']} = {fmt(f['v'])}   [{f['status']}]" for f in fs) or "none"))
+                         facts="\n".join(f"{f['k']} = {fmt(f['v'])}   [{f['status']}]" for f in fs) or "none",
+                         guardian=m.get("guardian") or {}))
     runs = []
     cum = 0
     for r in st["runs"]:
@@ -73,7 +74,9 @@ def view(st):
                          code="\n".join(e["text"] for e in ev if e["t"] == "code"),
                          decisions="\n".join(e["text"] for e in ev if e["t"] == "code" and re.match(
                              r"(resolver|superseded|repair|role|grounding|impact|schema|lever|INFEAS)", e["text"]))))
-    out = dict(file=PACK.name, nmsgs=len(msgs), msgs=msgs, runs=runs, calls=st["calls"], tokens=st["tokens"],
+    from planner import guardian
+    v = guardian.verify(st.get("audit", []))
+    out = dict(audit=dict(ok=v["ok"], entries=len(st.get("audit", [])), problem=v["problem"]), file=PACK.name, nmsgs=len(msgs), msgs=msgs, runs=runs, calls=st["calls"], tokens=st["tokens"],
                infeasible="; ".join(st.get("infeasible") or []), planMd=report.plan_md(st),
                traceTxt="\n".join(line(e) for e in st["trace"]) +
                         f"\n=== SESSION TOTAL: {st['calls']} model calls · {st['tokens']:,} tokens ===\n")

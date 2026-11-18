@@ -48,3 +48,17 @@ contains a constraint the vocabulary cannot express. A repair call (`reading`) h
 `ui/studio/Planner Studio.dc.html` is the approved Planner Studio design, wired to live data by `ui/studio.py`
 (reads the same `state/` the CLI writes; *Add message* appends to the same file and calls the same `engine.run()`).
 Test steps and expected results: [TEST_DATA.md](TEST_DATA.md).
+
+## MTM Guardian (security layer, `planner/guardian.py`, 0 model calls)
+- **Prompt-injection defence:** raw text is scanned (English + Roman Urdu) for instruction overrides, role hijack,
+  "hide from trace", "disable validation" and secret requests; such messages are QUARANTINED (no fact applied).
+  The reader prompt wraps messages as untrusted data. Ordinary words ("ignore the earlier quote") are not blocked.
+- **Authority:** reuses the resolver's authority matrix; roles come from the claimed sender name (not verified);
+  unknown senders are FLAGGED.
+- **Integrity:** a plan is committed only if all six checks pass; a legitimate but impossible change is
+  "ACCEPTED (INFEASIBLE)" and the last valid plan is kept.
+- **Audit:** SHA-256 hash chain (canonical JSON) per message, with model-call ids; `guardian.verify()` detects
+  edits, deletions and reordering. Tamper-evident, not tamper-proof: the chain head is printed into trace.txt
+  each run as an external checkpoint.
+- **Secrets:** keys only in `.env` (gitignored); API-key patterns and configured key values are redacted from
+  traces and UI.
