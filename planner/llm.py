@@ -54,7 +54,7 @@ def _call(p, prompt, timeout):
     if p == "ollama":
         url = os.environ.get("OLLAMA_URL", "http://localhost:11434") + url
     h = {"Authorization": "Bearer " + os.environ[key]} if key else {}
-    body = {"model": model, "temperature": 0, "response_format": {"type": "json_object"},
+    body = {"model": model, "temperature": 0, "max_tokens": 3000, "response_format": {"type": "json_object"},
             "messages": [{"role": "user", "content": prompt}]}
     if "gpt-oss" in model:
         body["reasoning_effort"] = "low"   # fewer hidden reasoning tokens
@@ -88,7 +88,15 @@ class Budget:
             self.st["calls"] += 1
             t = time.time()
             try:
-                text, model, usage = _call(p, prompt, self.timeout)
+                try:
+                    text, model, usage = _call(p, prompt, self.timeout)
+                except requests.HTTPError as e:      # rate limit: wait for the reset once if it is short
+                    wait = float(e.response.headers.get("retry-after", 99)) if e.response is not None else 99
+                    if e.response is None or e.response.status_code != 429 or wait > 20:
+                        raise
+                    self.tr.code(f"provider {p} rate-limited (429); waiting {wait:g} s then retrying (same numbered call)")
+                    time.sleep(wait)
+                    text, model, usage = _call(p, prompt, self.timeout)
             except Exception as e:
                 self.tr.call(self.st["calls"], f"{p}/{model_of(p)}", area, prompt, None, None,
                              err=f"{type(e).__name__}: {str(e)[:160]} -> fallback", secs=time.time() - t)

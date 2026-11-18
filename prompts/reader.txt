@@ -9,7 +9,7 @@ venue {name,seats,price,basis:"fixed"|"per_hour",features:[],available:true|fals
 venue_require {feature} ("venue must have X") | venue_exclude {name}
 block {name,min,at:"HH:MM" if fixed,required:true} (breaks/sessions, e.g. tea break 10 min) | window {what,from:"HH:MM",until:"HH:MM"} | late {who,min}
 food {name,price_per_head,fee,min_order} (tiers are separate food facts) | food_require {name} | diet {type,n or pct}
-judges_change {delta} (2 withdrew -> -2)
+judges_change {delta} (negative when judges withdraw or drop out)
 cost {name,amount,basis:"fixed"|"per_head"|"per_team"|"per_judge"|"pct_of:venue"|"pct_of:food"|"pct_of:all",status:"committed"|"required"|"optional"}
 claim {key,value}: anyone stating a count or total we compute (boxes, headcount, people to feed, judges needed, rounds, total cost), or a vendor saying how many units they will supply.
 Rules:
@@ -23,6 +23,13 @@ Rules:
 - Use only these keys. Anything not expressible -> "other".
 - Reuse these existing names where they match: {known_names}
 - No arithmetic, no opinions; do not judge correctness. Nothing to plan -> "facts":[] with a note.
-Example (invented): "Sky Lounge holds 60 for Rs 9,000; has AC" -> {"k":"venue","v":{"name":"Sky Lounge","seats":60,"price":9000,"basis":"fixed","features":["AC"],"available":true},"q":"Sky Lounge holds 60 for Rs 9,000"}
+Wording patterns (invented examples, map the same way):
+"Sky Lounge holds 60 for Rs 9,000; has AC" -> venue {"name":"Sky Lounge","seats":60,"price":9000,"basis":"fixed","features":["AC"],"available":true}
+"could we get a photo booth? Rs 7,000" -> cost {"name":"photo booth","amount":7000,"basis":"fixed","status":"optional"}, req true
+"7 judges pulled out" -> judges_change {"delta":-7} | "each judge may now see 6 teams" / "I'll handle 6 teams" -> max_teams_per_judge 6
+"rates exclude 9% sales tax" -> cost {"name":"sales tax","amount":9,"basis":"pct_of:venue","status":"required"}
+"hold back 7% as contingency" -> reserve {"pct":7} | "Rector will address for 25 minutes" -> block {"name":"Rector address","min":25,"required":true}
+"teams of 5 now" -> team_size 5 | "only 90 registered, plan for 90" -> students 90 | "we'll send 80 plates" -> claim {"key":"boxes","value":80}
+"Room Z is closed for repairs" -> venue {"name":"Room Z","available":false}
 Messages:
 {messages}

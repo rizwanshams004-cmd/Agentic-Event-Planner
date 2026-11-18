@@ -28,6 +28,23 @@ MULT = {"k": 1e3, "thousand": 1e3, "hazaar": 1e3, "hazar": 1e3, "hajar": 1e3, "l
         "lacs": 1e5, "lakhs": 1e5, "laakh": 1e5, "crore": 1e7, "million": 1e6, "sau": 100, "hundred": 100}
 
 
+# Sender-name keywords -> role (first match wins). Generic role words, not pack data.
+ROLE_RULES = [("student", r"student|society|club|\bclass\b|batch"),
+              ("judging", r"judg\w*\s+(coord|panel|lead|head)|coordinator"),
+              ("judge", r"\bjudge\b"), ("finance", r"financ|account|treasur|bursar"),
+              ("caterer", r"cater|food|kitchen|restaurant"), ("venue", r"venue|\bhall\b|auditorium|facilit|estate"),
+              ("official", r"iesco|wapda|police|\bcda\b|govt|government|municipal|utility|electric|notice"),
+              ("authority", r"dean|principal|registrar|rector|\bvc\b|vice.?chancellor|director|organi[sz]er|admin|\bhod\b|head of"),
+              ("unknown", r"volunteer|anonymous|unknown|someone")]
+
+
+def role_of(sender, model_role):
+    for role, rx in ROLE_RULES:
+        if re.search(rx, sender, re.I):
+            return role
+    return model_role if model_role in ROLES else "unknown"
+
+
 def numbers(text):
     """Every number the text could mean, after normalising commas, k, lakh, hazaar, words, hours."""
     t = re.sub(r"(?<=\d),(?=\d)", "", text.lower())
@@ -152,7 +169,11 @@ def read(chunk, known, budget, tr):
             continue
         good, bad = _facts(m.get("facts"))
         date = m.get("date") if re.match(r"^\d{4}-\d{2}-\d{2}$", str(m.get("date"))) else None
-        msgs.append(dict(frm=str(m.get("from") or "?"), role=m.get("role") if m.get("role") in ROLES else "unknown",
+        frm = str(m.get("from") or "?")
+        role = role_of(frm, m.get("role"))
+        if role != m.get("role"):
+            tr.code(f"role  sender '{frm}': model said {m.get('role')!r}, sender-name rule says {role!r} -> {role}")
+        msgs.append(dict(frm=frm, role=role,
                          date=date, facts=good, dropped=bad, other=m.get("other") or [], note=str(m.get("note") or "")))
     tr.code(f"reader: {len(msgs)} message(s), {sum(len(m['facts']) for m in msgs)} fact(s), "
             f"{sum(len(m['dropped']) for m in msgs)} dropped by schema check")
@@ -160,7 +181,7 @@ def read(chunk, known, budget, tr):
 
 
 AREA_WORDS = [("venue", r"venue|hall|room|seat|power|generator|parking|access"), ("food", r"food|lunch|meal|tea|cater|diet|veg"),
-              ("judging", r"judg|score|jury"), ("budget", r"rs|rupee|cost|price|tax|gst|budget|fee|pay")]
+              ("judging", r"judg|score|jury"), ("budget", r"\brs\b|rupee|cost|price|tax|gst|budget|fee|pay")]
 
 
 def infer_area(text):
